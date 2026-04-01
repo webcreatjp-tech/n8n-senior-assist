@@ -1,0 +1,251 @@
+{
+  "id": "QMRQUfAY3ZKVUtWF",
+  "name": "SeniorAssist — Portail Soignants",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {
+        "path": "seniorassist-portail",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "5a0bbfae-3d21-4f52-b2b7-1788fd7ca6f4",
+      "name": "Webhook — Portail Soignants",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -304,
+        0
+      ],
+      "webhookId": "seniorassist-portail"
+    },
+    {
+      "parameters": {
+        "url": "http://localhost:5000/api/events",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "label",
+              "value": "person"
+            },
+            {
+              "name": "after",
+              "value": "={{ Math.floor(Date.now()/1000)-7200 }}"
+            },
+            {
+              "name": "limit",
+              "value": "200"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "id": "d0267531-6909-4a51-8d0d-0869228eb593",
+      "name": "HTTP — Frigate 2h",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -64,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst events=$input.all().map(i=>i.json).filter(e=>e.id);\nconst par_camera={};const timestamps=[];\nfor(const evt of events){\n  const cam=evt.camera||'inconnue';\n  if(!par_camera[cam])par_camera[cam]={nb:0,derniere:null};\n  par_camera[cam].nb++;\n  if(evt.start_time){\n    timestamps.push(evt.start_time);\n    if(!par_camera[cam].derniere||evt.start_time>par_camera[cam].derniere)par_camera[cam].derniere=evt.start_time;\n  }\n}\ntimestamps.sort();\nconst derniere_ts=timestamps.length?timestamps[timestamps.length-1]:null;\nconst derniere_str=derniere_ts?new Date(derniere_ts*1000).toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'}):'--';\nconst heures=Array(24).fill(0);\nfor(const ts of timestamps)heures[new Date(ts*1000).getHours()]++;\nreturn [{json:{nb_events:events.length,par_camera,derniere_ts,derniere_detection:derniere_str,timeline_labels:JSON.stringify([...Array(24).keys()].map(h=>h+'h')),timeline_data:JSON.stringify(heures)}}];\n"
+      },
+      "id": "870b2e67-88d9-4b89-a72c-151f007c3942",
+      "name": "Code — Stats Frigate",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        208,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "1Ytq_TEhGvXlqFJX6l9wPuu2japj_JbOgIBk-KkqD5VQ",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 695805266,
+          "mode": "list",
+          "cachedResultName": "02_Alertes",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1Ytq_TEhGvXlqFJX6l9wPuu2japj_JbOgIBk-KkqD5VQ/edit#gid=695805266"
+        },
+        "options": {}
+      },
+      "id": "8fb5f2ab-22e8-4f43-8871-5db6ff64df18",
+      "name": "Sheets — Alertes",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.4,
+      "position": [
+        464,
+        0
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "NznwYiyQzqjAKGIB",
+          "name": "Google Sheets account"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "1Ytq_TEhGvXlqFJX6l9wPuu2japj_JbOgIBk-KkqD5VQ",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 1509304875,
+          "mode": "list",
+          "cachedResultName": "04_Statut_Resident",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1Ytq_TEhGvXlqFJX6l9wPuu2japj_JbOgIBk-KkqD5VQ/edit#gid=1509304875"
+        },
+        "options": {}
+      },
+      "id": "ec3bf247-9641-4ef3-af89-11835e25db8d",
+      "name": "Sheets — Statut",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.4,
+      "position": [
+        720,
+        0
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "NznwYiyQzqjAKGIB",
+          "name": "Google Sheets account"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst stats       = $('Code — Stats Frigate').first().json;\nlet alertes_all; try { alertes_all = $('Sheets — Alertes').all().filter(i=>!i.json.error).map((i,idx)=>({...i.json,_row:idx+2})); } catch(e) { alertes_all = []; }\nlet statut_rows; try { statut_rows = $('Sheets — Statut').all().filter(i=>!i.json.error).map(i=>i.json); } catch(e) { statut_rows = []; }\nconst statut_actuel = statut_rows.length ? statut_rows[statut_rows.length-1] : {Statut:'OK',Note:''};\nconst alertes_actives = alertes_all.filter(a=>String(a.Acquittée||a['Acquittée']||'').toUpperCase()!=='TRUE');\nconst alertes_hist = [...alertes_all].reverse().slice(0,30);\n\nconst now_ts = Math.floor(Date.now()/1000);\nconst diff_min = stats.derniere_ts ? Math.floor((now_ts-stats.derniere_ts)/60) : null;\nconst il_y_a = diff_min===null ? 'Aucune détection' :\n               diff_min<1 ? \"à l'instant\" :\n               diff_min<60 ? `il y a ${diff_min} min` :\n               `il y a ${Math.floor(diff_min/60)}h${diff_min%60?String(diff_min%60)+'min':''}`;\nconst absence_crit = diff_min!==null && diff_min>120;\nconst statut_val = statut_actuel.Statut||'OK';\nconst sr_color = statut_val==='SOS'?'#DC2626':statut_val==='Surveiller'?'#F59E0B':'#10B981';\nconst has_alerts = alertes_actives.length>0;\nconst now_str = new Date().toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'});\nconst date_str = new Date().toLocaleDateString('fr-FR',{weekday:'long',day:'numeric',month:'long'});\n\nlet cams_html='';\nfor(const[cam,d]of Object.entries(stats.par_camera||{})){\n  const last=d.derniere?new Date(d.derniere*1000).toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'}):'--';\n  cams_html+=`<div class=\"cam-card\"><div class=\"cam-label\">📷 ${cam.toUpperCase()}</div>` +\n    `<img class=\"cam-img\" data-cam=\"${cam}\" src=\"\" alt=\"\">` +\n    `<div class=\"cam-meta\">${d.nb} passage(s) · ${last}</div></div>`;\n}\nif(!cams_html) cams_html='<div class=\"empty\">Aucune caméra active</div>';\n\nlet alerts_html='';\nif(!has_alerts){\n  alerts_html='<div class=\"no-alert\">✓ Aucune alerte — tout va bien</div>';\n}else{\n  alertes_actives.forEach(a=>{\n    const type=a.Type_Alerte||a.type_alerte||'Alerte';\n    const cam=(a['Caméra']||a.Camera||a.camera||'?').toUpperCase();\n    const date=a.Date||''; const heure=a.Heure||'';\n    const msg=a.Message||a.message||'';\n    const crit=(a.Niveau_Urgence||a.niveau_urgence||'').toUpperCase()==='CRITIQUE';\n    alerts_html+=`<div class=\"alert-card ${crit?'crit':'warn'}\">\n      <div class=\"alert-head\"><span>${crit?'🔴':'🟡'}</span><div class=\"alert-title\">${type}</div><div class=\"alert-cam\">${cam}</div></div>\n      <div class=\"alert-when\">📅 ${date} à ${heure}</div>\n      ${msg?`<div class=\"alert-msg\">${msg}</div>`:''}\n      <div class=\"alert-btns\">\n        <button class=\"btn-acq\" onclick=\"acquitter(${a._row})\">✅ Acquitter</button>\n        <button class=\"btn-note\" onclick=\"openNote(${a._row})\">📝 Note</button>\n      </div>\n      <div class=\"note-wrap\" id=\"nw-${a._row}\" style=\"display:none\">\n        <textarea id=\"nt-${a._row}\" placeholder=\"Saisir une note...\"></textarea>\n        <button class=\"btn-save\" onclick=\"saveNote(${a._row})\">💾 Enregistrer</button>\n      </div></div>`;\n  });\n}\n\nlet hist_html='';\nif(!alertes_hist.length) hist_html='<div class=\"empty\">Aucun historique</div>';\nelse alertes_hist.forEach(a=>{\n  const done=String(a.Acquittée||a['Acquittée']||'').toUpperCase()==='TRUE';\n  hist_html+=`<div class=\"hist-row${done?' done':''}\">\n    <div class=\"hist-ico\">${done?'✅':'⏳'}</div>\n    <div><div class=\"hist-type\">${a.Type_Alerte||'—'}</div>\n    <div class=\"hist-meta\">${a.Date||''} ${a.Heure||''} · ${(a['Caméra']||a.Camera||'--').toUpperCase()}</div>\n    ${a.Note_Soignant?`<div class=\"hist-note\">📝 ${a.Note_Soignant}</div>`:''}</div></div>`;\n});\n\nconst html=`<!DOCTYPE html>\n<html lang=\"fr\"><head>\n<meta charset=\"UTF-8\">\n<meta name=\"viewport\" content=\"width=device-width,initial-scale=1,maximum-scale=1\">\n<meta name=\"apple-mobile-web-app-capable\" content=\"yes\">\n<title>SeniorAssist</title>\n<style>\n:root{--blue:#2563EB;--green:#10B981;--red:#DC2626;--amber:#F59E0B;--bg:#F0F4F8;--card:#fff;--border:#DDE3EC;--txt:#111827;--muted:#6B7280}\n*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}\nbody{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:var(--bg);color:var(--txt)}\n.hdr{background:var(--blue);color:#fff;padding:14px 20px;position:sticky;top:0;z-index:100;box-shadow:0 3px 10px rgba(37,99,235,.35)}\n.hdr-row{display:flex;justify-content:space-between;align-items:center;margin-bottom:3px}\n.hdr-name{font-size:20px;font-weight:800;display:flex;align-items:center;gap:8px}\n.dot{width:9px;height:9px;background:#4ADE80;border-radius:50%;animation:p 2s infinite;flex-shrink:0}\n@keyframes p{0%,100%{opacity:1}50%{opacity:.4}}\n.edit-btn{background:rgba(255,255,255,.2);border:none;color:#fff;width:30px;height:30px;border-radius:50%;font-size:14px;cursor:pointer}\n.hdr-sub{font-size:13px;opacity:.8}\n.hdr-time{font-size:13px;font-weight:700;opacity:.9}\n.banner{padding:14px 20px;font-weight:800;font-size:15px;text-align:center;color:#fff;background:${has_alerts?'var(--red)':'var(--green)'}}\n.layout{max-width:1100px;margin:0 auto;padding:14px}\n@media(min-width:768px){\n  .layout{display:grid;grid-template-columns:380px 1fr;gap:16px;align-items:start}\n}\n.col-r{display:flex;flex-direction:column;gap:14px}\n.card{background:var(--card);border-radius:18px;box-shadow:0 2px 8px rgba(0,0,0,.07);overflow:hidden;margin-bottom:14px}\n@media(min-width:768px){.card{margin-bottom:0}}\n.card-h{padding:16px 18px 0;font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.08em}\n.card-b{padding:14px 18px 18px}\n.pres-big{font-size:38px;font-weight:900;line-height:1.1;margin-bottom:4px;color:${absence_crit?'var(--red)':'var(--txt)'}}\n.pres-sub{font-size:13px;color:var(--muted);margin-bottom:14px}\n.s-badge{display:inline-flex;align-items:center;gap:6px;padding:6px 18px;border-radius:24px;font-weight:800;font-size:14px;color:#fff;background:${sr_color};margin-bottom:10px}\n.s-note{font-size:13px;color:var(--muted);font-style:italic;margin-bottom:12px}\n.s-btns{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}\n.sbtn{padding:14px 6px;border:2px solid;border-radius:14px;font-size:13px;font-weight:800;cursor:pointer;transition:.15s}\n.sbtn:active{transform:scale(.97)}\n.s-ok{background:#F0FDF4;border-color:#86EFAC;color:#15803D}\n.s-surv{background:#FFFBEB;border-color:#FCD34D;color:#92400E}\n.s-sos{background:#FFF1F2;border-color:#FDA4AF;color:#9F1239}\n.cams-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}\n.cam-card{background:var(--bg);border-radius:14px;overflow:hidden;border:1px solid var(--border)}\n.cam-label{padding:8px 12px;font-size:12px;font-weight:800;color:var(--blue);background:#EFF6FF}\n.cam-img{width:100%;aspect-ratio:16/9;object-fit:cover;display:block;background:#E5E7EB;min-height:80px}\n.cam-meta{padding:7px 12px;font-size:11px;color:var(--muted)}\n.no-alert{text-align:center;padding:24px;color:var(--green);font-weight:700;font-size:16px}\n.alert-card{border-radius:14px;padding:16px;margin-bottom:12px;border:1px solid;border-left:5px solid}\n.alert-card:last-child{margin-bottom:0}\n.crit{background:#FEF2F2;border-color:#FECACA;border-left-color:var(--red)}\n.warn{background:#FFFBEB;border-color:#FDE68A;border-left-color:var(--amber)}\n.alert-head{display:flex;align-items:center;gap:10px;margin-bottom:6px}\n.alert-title{font-weight:800;font-size:16px;flex:1}\n.alert-cam{background:rgba(0,0,0,.08);padding:3px 10px;border-radius:20px;font-size:12px;font-weight:700}\n.alert-when{font-size:12px;color:var(--muted);margin-bottom:8px}\n.alert-msg{font-size:14px;line-height:1.5;margin-bottom:12px;color:#374151}\n.alert-btns{display:flex;gap:10px}\n.btn-acq{flex:1;background:var(--green);color:#fff;border:none;padding:13px;border-radius:12px;font-size:14px;font-weight:800;cursor:pointer}\n.btn-note{flex:1;background:#EFF6FF;color:var(--blue);border:1px solid #BFDBFE;padding:13px;border-radius:12px;font-size:14px;font-weight:700;cursor:pointer}\n.note-wrap{margin-top:12px}\n.note-wrap textarea{width:100%;padding:12px;border:1px solid var(--border);border-radius:12px;font-size:14px;height:80px;resize:vertical;font-family:inherit}\n.btn-save{margin-top:8px;width:100%;background:var(--blue);color:#fff;border:none;padding:11px;border-radius:12px;font-size:14px;font-weight:700;cursor:pointer}\n.chart-w{padding:4px 0}\n.hist-toggle{width:100%;background:none;border:none;padding:16px 18px;display:flex;justify-content:space-between;font-size:14px;font-weight:700;cursor:pointer;color:var(--txt)}\n.hist-inner{padding:0 18px 14px;display:none}\n.hist-row{display:flex;gap:12px;padding:11px 0;border-bottom:1px solid var(--border)}\n.hist-row:last-child{border:none}\n.hist-row.done{opacity:.4}\n.hist-ico{font-size:18px;flex-shrink:0;margin-top:1px}\n.hist-type{font-size:14px;font-weight:700}\n.hist-meta{font-size:12px;color:var(--muted)}\n.hist-note{font-size:12px;color:var(--blue);font-style:italic;margin-top:2px}\n.empty{text-align:center;color:var(--muted);font-size:14px;padding:20px}\n.refresh{text-align:center;font-size:12px;color:var(--muted);padding:12px 0 4px}\n.modal{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:200;display:none;align-items:center;justify-content:center;padding:20px}\n.modal.open{display:flex}\n.mbox{background:#fff;border-radius:20px;padding:28px 24px;width:100%;max-width:380px;box-shadow:0 20px 60px rgba(0,0,0,.2)}\n.mbox h3{font-size:18px;font-weight:800;margin-bottom:16px}\n.mbox input{width:100%;padding:14px;border:1.5px solid var(--border);border-radius:12px;font-size:16px;margin-bottom:16px;font-family:inherit;outline:none}\n.mbtns{display:grid;grid-template-columns:1fr 1fr;gap:10px}\n.m-ok{background:var(--blue);color:#fff;border:none;padding:14px;border-radius:12px;font-weight:800;font-size:15px;cursor:pointer}\n.m-cancel{background:var(--bg);border:1px solid var(--border);padding:14px;border-radius:12px;font-weight:600;font-size:15px;cursor:pointer}\n</style></head>\n<body>\n<div class=\"hdr\">\n  <div class=\"hdr-row\">\n    <div class=\"hdr-name\"><span class=\"dot\"></span><span id=\"rn\">Résident</span><button class=\"edit-btn\" onclick=\"editName()\">✏️</button></div>\n    <span class=\"hdr-time\">${now_str}</span>\n  </div>\n  <div class=\"hdr-sub\">${date_str}</div>\n</div>\n<div class=\"banner\">${has_alerts?'⚠️ '+alertes_actives.length+' alerte(s) active(s)':'✓ Tout va bien — aucune alerte'}</div>\n\n<div class=\"layout\">\n  <div class=\"col-l\">\n    <div class=\"card\">\n      <div class=\"card-h\">Présence du résident</div>\n      <div class=\"card-b\">\n        <div class=\"pres-big\">${il_y_a}</div>\n        <div class=\"pres-sub\">Dernière détection : ${stats.derniere_detection} · ${stats.nb_events} passage(s) (2h)</div>\n        <div class=\"s-badge\">${statut_val==='SOS'?'🔴':statut_val==='Surveiller'?'🟡':'🟢'} ${statut_val}</div>\n        ${statut_actuel.Note?`<div class=\"s-note\">${statut_actuel.Note}</div>`:''}\n        <div class=\"s-btns\">\n          <button class=\"sbtn s-ok\" onclick=\"setStatut('OK')\">🟢<br>OK</button>\n          <button class=\"sbtn s-surv\" onclick=\"promptStatut('Surveiller')\">🟡<br>Surveiller</button>\n          <button class=\"sbtn s-sos\" onclick=\"promptStatut('SOS')\">🔴<br>SOS !</button>\n        </div>\n      </div>\n    </div>\n    <div class=\"card\">\n      <div class=\"card-h\">Caméras en direct</div>\n      <div class=\"card-b\" style=\"padding-top:12px\">\n        <div class=\"cams-grid\">${cams_html}</div>\n      </div>\n    </div>\n  </div>\n  <div class=\"col-r\">\n    <div class=\"card\">\n      <div class=\"card-h\">Alertes actives (${alertes_actives.length})</div>\n      <div class=\"card-b\">${alerts_html}</div>\n    </div>\n    <div class=\"card\">\n      <div class=\"card-h\">Activité 24h</div>\n      <div class=\"card-b\"><div class=\"chart-w\"><canvas id=\"chart\" height=\"90\"></canvas></div></div>\n    </div>\n    <div class=\"card\">\n      <button class=\"hist-toggle\" onclick=\"toggleH(this)\"><span>📋 Historique (${alertes_hist.length})</span><span id=\"harr\">▼</span></button>\n      <div class=\"hist-inner\" id=\"hinner\">${hist_html}</div>\n    </div>\n  </div>\n</div>\n<div class=\"refresh\">🔄 Actualisation dans <span id=\"cd\">60</span>s</div>\n\n<div class=\"modal\" id=\"mn\"><div class=\"mbox\"><h3>✏️ Nom du résident</h3>\n  <input id=\"ni\" type=\"text\" placeholder=\"Ex: M. Jean Dupont\" maxlength=\"50\">\n  <div class=\"mbtns\"><button class=\"m-cancel\" onclick=\"closeM('mn')\">Annuler</button><button class=\"m-ok\" onclick=\"saveName()\">Enregistrer</button></div>\n</div></div>\n<div class=\"modal\" id=\"ms\"><div class=\"mbox\"><h3 id=\"mst\">Changer statut</h3>\n  <input id=\"si\" type=\"text\" placeholder=\"Note (facultatif)\" maxlength=\"100\">\n  <div class=\"mbtns\"><button class=\"m-cancel\" onclick=\"closeM('ms')\">Annuler</button><button class=\"m-ok\" id=\"msok\" onclick=\"confirmS()\">Confirmer</button></div>\n</div></div>\n\n<script src=\"https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js\"><\\/script>\n<script>\nconst rn=document.getElementById('rn');\nconst sv=localStorage.getItem('sa_name');\nif(sv)rn.textContent=sv;\nfunction editName(){document.getElementById('ni').value=rn.textContent;document.getElementById('mn').classList.add('open');setTimeout(()=>document.getElementById('ni').focus(),100);}\nfunction saveName(){const v=document.getElementById('ni').value.trim();if(v){rn.textContent=v;localStorage.setItem('sa_name',v);}closeM('mn');}\ndocument.getElementById('ni').addEventListener('keydown',e=>{if(e.key==='Enter')saveName();});\nfunction closeM(id){document.getElementById(id).classList.remove('open');}\n\ndocument.querySelectorAll('img.cam-img[data-cam]').forEach(img=>{\n  const cam=img.dataset.cam;\n  img.src=location.origin+'/webhook/seniorassist-cam?cam='+encodeURIComponent(cam)+'&t='+Date.now();\n  img.onerror=()=>{img.alt='📷 '+cam.toUpperCase()+' — indisponible';};\n});\n\nwindow.addEventListener('load',()=>{\n  const ctx=document.getElementById('chart');\n  if(!ctx)return;\n  try{new Chart(ctx,{type:'bar',data:{labels:${stats.timeline_labels},datasets:[{data:${stats.timeline_data},backgroundColor:'#3B82F6',borderRadius:4,label:'Détections'}]},options:{responsive:true,plugins:{legend:{display:false}},scales:{y:{beginAtZero:true,ticks:{stepSize:1,font:{size:10}},grid:{color:'#F3F4F6'}},x:{ticks:{font:{size:9},maxRotation:0},grid:{display:false}}}}});}catch(e){console.error(e);}\n});\n\nfunction toggleH(btn){const b=document.getElementById('hinner'),a=document.getElementById('harr');const o=b.style.display==='block';b.style.display=o?'none':'block';a.textContent=o?'▼':'▲';}\n\nconst ACT=location.origin+'/webhook/seniorassist-action';\nfunction acquitter(row){if(!confirm('Acquitter cette alerte ?'))return;fetch(ACT,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'acquitter',row})}).then(()=>setTimeout(()=>location.reload(),500));}\nfunction openNote(row){const nw=document.getElementById('nw-'+row);nw.style.display=nw.style.display==='none'?'block':'none';if(nw.style.display==='block')document.getElementById('nt-'+row).focus();}\nfunction saveNote(row){const note=document.getElementById('nt-'+row).value.trim();if(!note){alert('Saisir une note.');return;}fetch(ACT,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'note',row,note})}).then(()=>setTimeout(()=>location.reload(),500));}\n\nlet _ps='';\nfunction setStatut(s,n=''){fetch(ACT,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'statut',statut:s,note:n})}).then(()=>setTimeout(()=>location.reload(),800));}\nfunction promptStatut(s){_ps=s;document.getElementById('mst').textContent=s==='SOS'?'🔴 Déclencher SOS':'🟡 Passer en surveillance';document.getElementById('msok').textContent=s==='SOS'?'🔴 Confirmer SOS':'🟡 Confirmer';document.getElementById('si').value='';document.getElementById('ms').classList.add('open');setTimeout(()=>document.getElementById('si').focus(),100);}\nfunction confirmS(){const n=document.getElementById('si').value.trim();closeM('ms');setStatut(_ps,n);}\ndocument.getElementById('si').addEventListener('keydown',e=>{if(e.key==='Enter')confirmS();});\n\nlet cd=60;const cdEl=document.getElementById('cd');\nsetInterval(()=>{cd--;if(cdEl)cdEl.textContent=cd;if(cd<=0)location.reload();},1000);\n<\\/script></body></html>`;\nreturn [{json:{html}}];\n"
+      },
+      "id": "baae839a-2c54-4406-8784-67d7c7c76dc6",
+      "name": "Code — Génère HTML Portail",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        992,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "={{ $json.html }}",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "text/html; charset=utf-8"
+              }
+            ]
+          }
+        }
+      },
+      "id": "3a0cd6cd-0ca4-4a5a-bae9-fac983a4a009",
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1248,
+        0
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook — Portail Soignants": {
+      "main": [
+        [
+          {
+            "node": "HTTP — Frigate 2h",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP — Frigate 2h": {
+      "main": [
+        [
+          {
+            "node": "Code — Stats Frigate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code — Stats Frigate": {
+      "main": [
+        [
+          {
+            "node": "Sheets — Alertes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Sheets — Alertes": {
+      "main": [
+        [
+          {
+            "node": "Sheets — Statut",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Sheets — Statut": {
+      "main": [
+        [
+          {
+            "node": "Code — Génère HTML Portail",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code — Génère HTML Portail": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false,
+    "timeSavedMode": "fixed",
+    "timezone": "Europe/Paris",
+    "binaryMode": "separate"
+  },
+  "meta": {},
+  "createdAt": "2026-03-22 17:13:04.083",
+  "updatedAt": "2026-03-23 13:03:26.886",
+  "description": ""
+}
