@@ -1,0 +1,255 @@
+{
+  "id": "xDiYxz9r8jIvsEcn",
+  "name": "SeniorAssist — Alertes Temps Réel",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {
+        "jsCode": "let payload;\ntry {\n  payload = JSON.parse($input.item.json.message);\n} catch(e) { return []; }\n\n// Uniquement les nouvelles alertes\nif (payload.type !== 'new') return [];\n\nconst review = payload.after || {};\nif (review.severity !== 'alert') return [];\n\nconst camera = review.camera || 'inconnue';\nconst zones = review.data?.zones || [];\nconst heure = new Date().toLocaleTimeString('fr-FR', {hour:'2-digit', minute:'2-digit', second:'2-digit'});\nconst heure_num = new Date().getHours();\n\n// --- INTRUSION NOCTURNE ---\nif (heure_num >= 23 || heure_num < 6) {\n  return [{ json: {\n    type_alerte: 'INTRUSION NOCTURNE',\n    message_alerte: `Présence détectée sur la caméra \"${camera}\" à ${heure} (zone: ${zones.join(', ')}). Vérification immédiate recommandée.`,\n    niveau_urgence: 'CRITIQUE',\n    heure, camera, score: 0\n  }}];\n}\n\n// --- ALERTE JOURNÉE ---\nreturn [{ json: {\n  type_alerte: 'PRÉSENCE ANORMALE',\n  message_alerte: `Alerte détectée sur la caméra \"${camera}\" à ${heure} dans la zone: ${zones.join(', ')}.`,\n  niveau_urgence: 'ATTENTION',\n  heure, camera, score: 0\n}}];"
+      },
+      "id": "0cfafaf0-ad56-4987-9611-1df5a3a61ff0",
+      "name": "Code — Analyse anomalie",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -160,
+        -800
+      ],
+      "alwaysOutputData": false
+    },
+    {
+      "parameters": {
+        "sendTo": "jeanphilippe.belliard84@gmail.com",
+        "subject": "={{ $json.type_alerte }}",
+        "message": "=<!DOCTYPE html>\n<html lang=\"fr\">\n<head><meta charset=\"UTF-8\"></head>\n<body style=\"margin:0; padding:0; background:#f0f2f5; font-family:Arial,sans-serif;\">\n<table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"background:#f0f2f5; padding:32px 16px;\">\n<tr><td align=\"center\">\n<table width=\"600\" cellpadding=\"0\" cellspacing=\"0\" style=\"background:#fff; border-radius:16px; border:1px solid #e0e0e0;\">\n\n  <!-- HEADER -->\n  <tr>\n    <td style=\"background:{{ $json.niveau_urgence === 'CRITIQUE' ? '#A32D2D' : '#BA7517' }}; padding:24px 32px; border-radius:16px 16px 0 0;\">\n      <table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\">\n        <tr>\n          <td style=\"color:#fff; font-size:20px; font-weight:700;\">SeniorAssist</td>\n          <td align=\"right\" style=\"color:rgba(255,255,255,0.8); font-size:13px;\">{{ $json.heure }}</td>\n        </tr>\n      </table>\n      <p style=\"color:rgba(255,255,255,0.9); font-size:14px; margin:6px 0 0;\">Alerte automatique · Caméra {{ $json.camera }}</p>\n    </td>\n  </tr>\n\n  <!-- BADGE ALERTE -->\n  <tr>\n    <td style=\"padding:24px 32px 0;\">\n      <table cellpadding=\"0\" cellspacing=\"0\">\n        <tr>\n          <td style=\"background:{{ $json.niveau_urgence === 'CRITIQUE' ? '#FCEBEB' : '#FAEEDA' }}; color:{{ $json.niveau_urgence === 'CRITIQUE' ? '#A32D2D' : '#854F0B' }}; font-size:13px; font-weight:700; padding:8px 16px; border-radius:8px; letter-spacing:0.05em;\">{{ $json.type_alerte }}</td>\n        </tr>\n      </table>\n    </td>\n  </tr>\n\n  <!-- MESSAGE -->\n  <tr>\n    <td style=\"padding:16px 32px 0;\">\n      <p style=\"font-size:16px; line-height:1.7; color:#2C2C2A; margin:0;\">{{ $json.message_alerte }}</p>\n    </td>\n  </tr>\n\n  <!-- STATS -->\n  <tr>\n    <td style=\"padding:20px 32px 0;\">\n      <table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\">\n        <tr>\n          <td width=\"50%\" style=\"padding-right:6px;\">\n            <table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"background:#f6f6f6; border-radius:10px; border:1px solid #e8e8e8;\">\n              <tr><td style=\"padding:12px; text-align:center;\">\n                <div style=\"font-size:20px; font-weight:700; color:#444;\">{{ $json.score }}%</div>\n                <div style=\"font-size:11px; color:#999; margin-top:4px; text-transform:uppercase; letter-spacing:0.05em;\">Score détection</div>\n              </td></tr>\n            </table>\n          </td>\n          <td width=\"50%\" style=\"padding-left:6px;\">\n            <table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"background:#f6f6f6; border-radius:10px; border:1px solid #e8e8e8;\">\n              <tr><td style=\"padding:12px; text-align:center;\">\n                <div style=\"font-size:20px; font-weight:700; color:#444;\">{{ $json.camera }}</div>\n                <div style=\"font-size:11px; color:#999; margin-top:4px; text-transform:uppercase; letter-spacing:0.05em;\">Caméra</div>\n              </td></tr>\n            </table>\n          </td>\n        </tr>\n      </table>\n    </td>\n  </tr>\n\n  <!-- ACTION -->\n  <tr>\n    <td style=\"padding:20px 32px 28px;\">\n      <table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"background:{{ $json.niveau_urgence === 'CRITIQUE' ? '#FCEBEB' : '#FAEEDA' }}; border-radius:10px; border:1px solid {{ $json.niveau_urgence === 'CRITIQUE' ? '#F09595' : '#FAC775' }};\">\n        <tr><td style=\"padding:14px 16px;\">\n          <p style=\"font-size:13px; font-weight:700; color:{{ $json.niveau_urgence === 'CRITIQUE' ? '#A32D2D' : '#854F0B' }}; margin:0 0 4px; text-transform:uppercase; letter-spacing:0.05em;\">Action requise</p>\n          <p style=\"font-size:14px; color:#2C2C2A; margin:0; line-height:1.6;\">{{ $json.niveau_urgence === 'CRITIQUE' ? 'Intervenir immédiatement auprès du résident. Contacter les secours si nécessaire.' : 'Vérifier l\\'état du résident dans les plus brefs délais.' }}</p>\n        </td></tr>\n      </table>\n    </td>\n  </tr>\n\n  <!-- PHOTO CAMÉRA -->\n  <tr>\n    <td style=\"padding:0 32px 20px;\">\n      <table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"background:#F5F5F5; border-radius:10px; border:1px solid #E0E0E0;\">\n        <tr><td style=\"padding:14px 16px;\">\n          <p style=\"font-size:13px; font-weight:700; color:#555; margin:0 0 4px; text-transform:uppercase; letter-spacing:0.05em;\">📷 Snapshot caméra {{ $json.camera }}</p>\n          <p style=\"font-size:13px; color:#888; margin:0; line-height:1.5;\">{{ $json.has_photo ? 'Photo ci-jointe — état de la caméra au moment de l\\'alerte.' : 'Aucune photo disponible (caméra hors ligne).' }}</p>\n        </td></tr>\n      </table>\n    </td>\n  </tr>\n\n  <!-- FOOTER -->\n  <tr>\n    <td style=\"padding:16px 32px 20px; background:#fafafa; border-top:1px solid #f0f0f0; border-radius:0 0 16px 16px;\">\n      <p style=\"font-size:12px; color:#aaa; margin:0;\">Alerte générée automatiquement par SeniorAssist.</p>\n      <p style=\"font-size:12px; color:#ccc; margin:6px 0 0;\">Propulsé par <span style=\"color:#1D9E75;\">WEB-CREAT</span> · Automatisation IA pour les professionnels</p>\n    </td>\n  </tr>\n\n</table>\n</td></tr>\n</table>\n</body>\n</html>",
+        "options": {
+          "appendAttribution": false,
+          "attachmentsUi": {
+            "attachmentsBinary": [
+              {
+                "property": "photo_camera"
+              }
+            ]
+          }
+        }
+      },
+      "id": "4ec88af5-e420-4a15-8724-a63fb6f1d863",
+      "name": "Gmail — Alerte urgente",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        880,
+        -560
+      ],
+      "webhookId": "5a7d5d22-a400-45aa-9ae8-1c2c188b757d",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "oWi8NIF0PA1jNesS",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "1Ytq_TEhGvXlqFJX6l9wPuu2japj_JbOgIBk-KkqD5VQ",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 695805266,
+          "mode": "list",
+          "cachedResultName": "02_Alertes",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1Ytq_TEhGvXlqFJX6l9wPuu2japj_JbOgIBk-KkqD5VQ/edit#gid=695805266"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Date": "={{ new Date().toLocaleDateString('fr-FR') }}",
+            "Heure": "={{ $('Code — Analyse anomalie').first().json.heure }}",
+            "Type_Alerte": "={{ $('Code — Analyse anomalie').first().json.type_alerte }}",
+            "Niveau_Urgence": "={{ $('Code — Analyse anomalie').first().json.niveau_urgence }}",
+            "Caméra": "={{ $('Code — Analyse anomalie').first().json.camera }}",
+            "Message": "={{ $('Code — Analyse anomalie').first().json.message_alerte }}",
+            "Acquittée": "FALSE",
+            "Note_Soignant": "",
+            "Acquitté_le": ""
+          },
+          "schema": [],
+          "matchingColumns": []
+        },
+        "options": {}
+      },
+      "id": "e718cf83-c39b-4bf5-9097-7e4e65cc6220",
+      "name": "Sheets — Log Alerte",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.4,
+      "position": [
+        1392,
+        -480
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "NznwYiyQzqjAKGIB",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "topics": "frigate/reviews",
+        "options": {}
+      },
+      "id": "c5304d64-23ce-4fcd-b407-72880d3f75d1",
+      "name": "MQTT — Frigate reviews",
+      "type": "n8n-nodes-base.mqttTrigger",
+      "typeVersion": 1,
+      "position": [
+        -448,
+        -864
+      ],
+      "credentials": {
+        "mqtt": {
+          "id": "bM7VHVnCRozEugf8",
+          "name": "MQTT account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "sendPhoto",
+        "chatId": "=8471849130",
+        "binaryData": true,
+        "binaryPropertyName": "photo_camera",
+        "additionalFields": {
+          "caption": "={{ ($json.niveau_urgence === 'CRITIQUE' ? '🚨' : '⚠️') + ' <b>' + $json.type_alerte + ' — SeniorAssist</b>\\n\\n' + $json.message_alerte + '\\n\\nNiveau : <b>' + $json.niveau_urgence + '</b>\\nCaméra : ' + $json.camera }}",
+          "parse_mode": "HTML"
+        }
+      },
+      "id": "b8c9d0e1-f234-5678-90ab-cdef12340001",
+      "name": "Telegram — Alerte Urgente",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [
+        912,
+        -1024
+      ],
+      "webhookId": "05fa8b3e-7a7a-4ae1-882a-cb46113dc6d2",
+      "credentials": {
+        "telegramApi": {
+          "id": "5IqF446S7446SmUc",
+          "name": "agent"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "=http://localhost:5000/api/{{ ['salon','entree'].includes($json.camera) ? $json.camera : 'salon' }}/latest.jpg",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file",
+              "outputPropertyName": "photo_camera"
+            }
+          },
+          "timeout": 6000
+        }
+      },
+      "id": "d2e3f4a5-0001-0000-0000-photocam00001",
+      "name": "HTTP — Photo Caméra",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        128,
+        -928
+      ],
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// Récupère l'analyse depuis le nœud précédent\nconst analyse = $('Code — Analyse anomalie').first().json;\n\n// Snapshot de la caméra déclencheuse\nconst camBin = $('HTTP — Photo Caméra').first().binary?.photo_camera ?? null;\n\nreturn [{\n  json: { ...analyse, has_photo: !!camBin },\n  binary: camBin ? { photo_camera: camBin } : {}\n}];"
+      },
+      "id": "d2e3f4a5-0002-0000-0000-codeprep00002",
+      "name": "Code — Prépare Notifs",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        416,
+        -896
+      ]
+    }
+  ],
+  "connections": {
+    "Code — Analyse anomalie": {
+      "main": [
+        [
+          {
+            "node": "HTTP — Photo Caméra",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gmail — Alerte urgente": {
+      "main": [
+        [
+          {
+            "node": "Sheets — Log Alerte",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "MQTT — Frigate reviews": {
+      "main": [
+        [
+          {
+            "node": "Code — Analyse anomalie",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP — Photo Caméra": {
+      "main": [
+        [
+          {
+            "node": "Code — Prépare Notifs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code — Prépare Notifs": {
+      "main": [
+        [
+          {
+            "node": "Telegram — Alerte Urgente",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false,
+    "callerPolicy": "workflowsFromSameOwner",
+    "timeSavedMode": "fixed",
+    "timezone": "Europe/Paris"
+  },
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "createdAt": "2026-03-22 07:41:19.469",
+  "updatedAt": "2026-03-23 16:46:56.001",
+  "description": ""
+}
