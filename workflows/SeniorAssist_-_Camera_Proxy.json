@@ -1,0 +1,99 @@
+{
+  "id": "JexPbvxZ0IqdkRWY",
+  "name": "SeniorAssist — Camera Proxy",
+  "active": false,
+  "nodes": [
+    {
+      "id": "d4bd6333-05fc-40d4-8de9-d67037922ab1",
+      "name": "Webhook — Camera",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "webhookId": "seniorassist-cam",
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "httpMethod": "GET",
+        "path": "seniorassist-cam",
+        "responseMode": "responseNode",
+        "options": {}
+      }
+    },
+    {
+      "id": "2984230a-81d9-4c5c-b60d-8938463ea9c4",
+      "name": "HTTP — Fetch Image",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        260,
+        0
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "=http://localhost:5000/api/{{ ['salon','entree'].includes(($json.query.cam||'').toLowerCase()) ? ($json.query.cam||'').toLowerCase() : 'salon' }}/latest.jpg",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file",
+              "outputPropertyName": "data"
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "480ae79b-3c90-4645-b498-6630ea2829b0",
+      "name": "Respond — Image",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        520,
+        0
+      ],
+      "parameters": {
+        "respondWith": "binary",
+        "options": {
+          "binaryProperty": "data",
+          "responseCode": 200
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Webhook — Camera": {
+      "main": [
+        [
+          {
+            "node": "HTTP — Fetch Image",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP — Fetch Image": {
+      "main": [
+        [
+          {
+            "node": "Respond — Image",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false,
+    "timeSavedMode": "fixed",
+    "timezone": "Europe/Paris",
+    "binaryMode": "separate"
+  },
+  "meta": {},
+  "createdAt": "2026-03-22 17:44:58.846",
+  "updatedAt": "2026-03-23 09:40:59.907",
+  "description": ""
+}
