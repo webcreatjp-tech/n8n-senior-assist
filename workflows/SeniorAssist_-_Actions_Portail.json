@@ -1,0 +1,245 @@
+{
+  "id": "Qu9jtBZ9kYVM9zWP",
+  "name": "SeniorAssist — Actions Portail",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "seniorassist-action",
+        "authentication": "headerAuth",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "aea1c149-b0ec-4e3f-be46-6713ce8d645b",
+      "name": "Webhook — Action",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -96,
+        -128
+      ],
+      "webhookId": "seniorassist-action",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "p3F6YaolGoRdCv7H",
+          "name": "HTTP Basic"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst b=$input.first().json.body||$json.body||$json;\nconst action=b.action;const row=parseInt(b.row)||0;const note=b.note||'';const statut=b.statut||'';\nif(action==='acquitter'&&row>0)return [{json:{_action:'upd',_row:row,Acquittée:'TRUE','Acquitté_le':new Date().toLocaleDateString('fr-FR'),Note_Soignant:''}}];\nif(action==='note'&&row>0)return [{json:{_action:'upd',_row:row,Note_Soignant:note,Acquittée:'',Acquitté_le:''}}];\nif(action==='statut')return [{json:{_action:'app',Date:new Date().toLocaleDateString('fr-FR'),Heure:new Date().toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'}),Statut:statut,Note:note}}];\nreturn [{json:{_action:'unknown'}}];\n"
+      },
+      "id": "fcbf0208-e423-4daa-be59-a6ec64405186",
+      "name": "Code — Route Action",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        192,
+        -128
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "1Ytq_TEhGvXlqFJX6l9wPuu2japj_JbOgIBk-KkqD5VQ",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 695805266,
+          "mode": "list",
+          "cachedResultName": "02_Alertes",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1Ytq_TEhGvXlqFJX6l9wPuu2japj_JbOgIBk-KkqD5VQ/edit#gid=695805266"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "row_number": "={{ $json._row }}",
+            "Acquittée": "={{ $json.Acquittée||'' }}",
+            "Note_Soignant": "={{ $json.Note_Soignant||'' }}",
+            "Acquitté_le": "={{ $json['Acquitté_le']||'' }}"
+          }
+        },
+        "options": {}
+      },
+      "id": "5390fce0-8ca0-4fd3-ad7c-4619922034f4",
+      "name": "Sheets — Update Alerte",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.4,
+      "position": [
+        592,
+        80
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "NznwYiyQzqjAKGIB",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "1Ytq_TEhGvXlqFJX6l9wPuu2japj_JbOgIBk-KkqD5VQ",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 1509304875,
+          "mode": "list",
+          "cachedResultName": "04_Statut_Resident",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1Ytq_TEhGvXlqFJX6l9wPuu2japj_JbOgIBk-KkqD5VQ/edit#gid=1509304875"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Date": "={{ $json.Date }}",
+            "Heure": "={{ $json.Heure }}",
+            "Statut": "={{ $json.Statut }}",
+            "Note": "={{ $json.Note }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "Date",
+              "displayName": "Date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Heure",
+              "displayName": "Heure",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Statut",
+              "displayName": "Statut",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Note",
+              "displayName": "Note",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "id": "f7165ac9-87ce-4273-93cc-0e8069cad9ac",
+      "name": "Sheets — Append Statut",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.4,
+      "position": [
+        592,
+        -288
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "NznwYiyQzqjAKGIB",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "{\"success\":true}",
+        "options": {}
+      },
+      "id": "29459eac-1433-4a4d-815c-5d82f0496da4",
+      "name": "Respond — OK",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        944,
+        -112
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook — Action": {
+      "main": [
+        [
+          {
+            "node": "Code — Route Action",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code — Route Action": {
+      "main": [
+        [
+          {
+            "node": "Sheets — Update Alerte",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Sheets — Append Statut",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Sheets — Update Alerte": {
+      "main": [
+        [
+          {
+            "node": "Respond — OK",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Sheets — Append Statut": {
+      "main": [
+        [
+          {
+            "node": "Respond — OK",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false,
+    "timeSavedMode": "fixed",
+    "timezone": "Europe/Paris",
+    "binaryMode": "separate"
+  },
+  "meta": {},
+  "createdAt": "2026-03-22 17:13:04.195",
+  "updatedAt": "2026-03-23 13:05:50.769",
+  "description": ""
+}
