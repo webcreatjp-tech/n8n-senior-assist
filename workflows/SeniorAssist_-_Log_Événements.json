@@ -1,0 +1,232 @@
+{
+  "id": "4d4cd80d3fc04fc8",
+  "name": "SeniorAssist — Log Événements",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 * * * *"
+            }
+          ]
+        }
+      },
+      "id": "47ae9956-967e-4de7-a88c-4149610795fe",
+      "name": "CRON — Toutes les heures",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        -96,
+        -96
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=http://localhost:5000/api/events?after={{ Math.floor((Date.now() - 3600000) / 1000) }}",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "label",
+              "value": "person"
+            },
+            {
+              "name": "after",
+              "value": "={{ Math.floor(Date.now() / 1000) - 3600 }}"
+            },
+            {
+              "name": "limit",
+              "value": "200"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "id": "0b70d453-caa6-4523-a1ec-bf74008eed57",
+      "name": "HTTP — Événements dernière heure",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        160,
+        -96
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst items = $input.all().map(i => i.json).filter(e => e.id && e.end_time);\nif (!items.length) return [];\n\nreturn items.map(evt => {\n  const dt = new Date(evt.start_time * 1000);\n  const date = dt.toLocaleDateString('fr-FR');\n  const heure = dt.toLocaleTimeString('fr-FR', {hour:'2-digit', minute:'2-digit', second:'2-digit'});\n  const score = evt.data?.top_score ? Math.round(evt.data.top_score * 100) : null;\n  const duree = evt.end_time ? Math.round(evt.end_time - evt.start_time) : null;\n  const severite = evt.data?.max_severity || 'detection';\n  return { json: {\n    Date: date,\n    Heure: heure,\n    'Caméra': evt.camera || 'inconnue',\n    'Score%': score ? score + '%' : '--',\n    'Durée(s)': duree || '--',\n    Sévérité: severite,\n    ID_Frigate: evt.id\n  }};\n});\n"
+      },
+      "id": "a1669b11-3f36-412d-8e2d-d1733e1be6f6",
+      "name": "Code — Formate événements",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        400,
+        -96
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "1Ytq_TEhGvXlqFJX6l9wPuu2japj_JbOgIBk-KkqD5VQ",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 1030898438,
+          "mode": "list",
+          "cachedResultName": "01_Evenements.csv",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1Ytq_TEhGvXlqFJX6l9wPuu2japj_JbOgIBk-KkqD5VQ/edit#gid=1030898438"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Date": "={{ $json.Date }}",
+            "Heure": "={{ $json.Heure }}",
+            "Caméra": "={{ $json['Caméra'] }}",
+            "Score%": "={{ $json['Score%'] }}",
+            "Durée(s)": "={{ $json['Durée(s)'] }}",
+            "Sévérité": "={{ $json.Sévérité }}",
+            "ID_Frigate": "={{ $json.ID_Frigate }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "Date",
+              "displayName": "Date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Heure",
+              "displayName": "Heure",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Caméra",
+              "displayName": "Caméra",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Score%",
+              "displayName": "Score%",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Durée(s)",
+              "displayName": "Durée(s)",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Sévérité",
+              "displayName": "Sévérité",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "ID_Frigate",
+              "displayName": "ID_Frigate",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "id": "8b86f9e8-21af-44ca-aedb-b54c93364cfc",
+      "name": "Sheets — Log Événements",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.4,
+      "position": [
+        640,
+        -96
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "NznwYiyQzqjAKGIB",
+          "name": "Google Sheets account"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "CRON — Toutes les heures": {
+      "main": [
+        [
+          {
+            "node": "HTTP — Événements dernière heure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP — Événements dernière heure": {
+      "main": [
+        [
+          {
+            "node": "Code — Formate événements",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code — Formate événements": {
+      "main": [
+        [
+          {
+            "node": "Sheets — Log Événements",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false,
+    "timeSavedMode": "fixed",
+    "timezone": "Europe/Paris",
+    "binaryMode": "separate"
+  },
+  "meta": {},
+  "createdAt": "2026-03-22 15:34:20",
+  "updatedAt": "2026-03-23 09:40:59.907",
+  "description": ""
+}
