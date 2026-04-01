@@ -1,0 +1,144 @@
+{
+  "id": "6MWwt4OlQ98bRwEM",
+  "name": "SeniorAssist — API Patients",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "GET",
+        "path": "seniorassist-patients",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "a55969d8-abf2-4705-8a06-2b5031df65dc",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        240,
+        300
+      ],
+      "webhookId": "c490641d-41a5-43a8-90c5-02e20bd41905"
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=http://localhost:5000/api/events?camera=zosi&limit=10",
+        "options": {}
+      },
+      "id": "7c1f02b0-8cce-43a9-85c3-d1ca716ee41e",
+      "name": "Frigate Dernier Event",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        480,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=http://localhost:5000/api/events?camera=zosi&after={{ Math.floor(Date.now()/1000)-86400 }}&limit=200",
+        "options": {}
+      },
+      "id": "5699be79-9798-4e2c-9bdc-77dbaea52faf",
+      "name": "Frigate Events 24h",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        480,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst PATIENTS_CONFIG = [\n  { id:1, name:\"Madeleine Dupont\", address:\"12 rue des Lilas, 75012 Paris\",\n    cameras:[\"zosi\"], icon:\"👵\", initials:\"MD\", avatarCls:\"av-blue\" },\n  { id:2, name:\"Robert Martin\", address:\"8 avenue Victor Hugo, 69006 Lyon\",\n    cameras:[], icon:\"👴\", initials:\"RM\", avatarCls:\"av-teal\" }\n];\nconst now = Math.floor(Date.now() / 1000);\nconst h24 = now - 86400;\n\n// HTTP nodes auto-split JSON arrays → each item = one event\nconst lastEvts  = $('Frigate Dernier Event').all().map(i => i.json);\nconst todayEvts = $('Frigate Events 24h').all().map(i => i.json);\n\nconst enriched = PATIENTS_CONFIG.map(p => {\n  let status = p.cameras.length === 0 ? 'inactive' : 'normal';\n  let eventsToday = 0;\n  let lastActivity = 'Aucune activité récente';\n  let lastEventId  = null;\n\n  if (p.cameras.length > 0) {\n    eventsToday = todayEvts.filter(e => p.cameras.includes(e.camera)).length;\n    const pLast = lastEvts.find(e => p.cameras.includes(e.camera));\n    if (pLast) {\n      lastEventId = pLast.id;\n      const d = new Date(pLast.start_time * 1000);\n      const hh = d.getHours().toString().padStart(2,'0');\n      const mm = d.getMinutes().toString().padStart(2,'0');\n      lastActivity = d.toDateString() === new Date().toDateString()\n        ? `Aujourd'hui à ${hh}:${mm}`\n        : d.toLocaleDateString('fr-FR') + ` à ${hh}:${mm}`;\n      status = pLast.start_time < h24 ? 'alert' : 'normal';\n    } else { status = 'alert'; }\n  }\n\n  const labels = {normal:'Normal', alert:'Alerte', urgent:'Urgence', inactive:'Inactif'};\n  return { ...p, status, statusLabel: labels[status]||status,\n           lastActivity, lastEventId, eventsToday };\n});\n\nreturn [{ json: { patients: enriched } }];\n"
+      },
+      "id": "7a1ff91f-22de-4678-9f9a-383e3fc5fcf3",
+      "name": "Assembler Patients",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        720,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "987889d1-9670-48cb-b683-77ba01c02788",
+      "name": "Répondre",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        960,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Frigate Dernier Event",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Frigate Events 24h",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Frigate Dernier Event": {
+      "main": [
+        [
+          {
+            "node": "Assembler Patients",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Frigate Events 24h": {
+      "main": [
+        [
+          {
+            "node": "Assembler Patients",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Assembler Patients": {
+      "main": [
+        [
+          {
+            "node": "Répondre",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
+  },
+  "meta": {},
+  "createdAt": "2026-03-20 18:26:34.024",
+  "updatedAt": "2026-03-20 18:33:58.538",
+  "description": ""
+}
