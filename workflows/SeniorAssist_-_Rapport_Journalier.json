@@ -1,0 +1,448 @@
+{
+  "id": "9Qx8wXyFaNpoYvBH",
+  "name": "SeniorAssist — Rapport Journalier",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 8 * * *"
+            }
+          ]
+        }
+      },
+      "id": "1667eecb-422f-45c9-9a3c-46888b52973e",
+      "name": "CRON — 8h00",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -144,
+        -800
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=http://localhost:5000/api/events",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "label",
+              "value": "person"
+            },
+            {
+              "name": "after",
+              "value": "={{ Math.floor(Date.now() / 1000) - 86400 }}"
+            },
+            {
+              "name": "limit",
+              "value": "200"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "id": "a8b2c573-d0f9-427b-aa4b-ceb4ba601c0d",
+      "name": "HTTP — Récupère événements Frigate",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        128,
+        -672
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const events = $input.all().map(i => i.json).filter(e => e.id);\n\nif (!events || events.length === 0) {\n  return [{ json: { \n    resume: 'Aucun événement détecté dans les dernières 24h.', \n    nb_events: 0, anomalies: 0,\n    premiere_detection: '--', derniere_detection: '--',\n    duree_moyenne: '--', score_moyen: '--',\n    statut_html: '<span style=\"background:#0F6E56; color:#9FE1CB; font-size:12px; font-weight:700; padding:5px 14px; border-radius:20px;\">✓ RAS</span>'\n  }}];\n}\n\nconst nb_events = events.length;\nlet anomalies = 0;\nconst lignes = [];\nlet total_duree = 0;\nlet total_score = 0;\nlet nb_score = 0;\n\nconst timestamps = events.map(e => e.start_time).sort();\nconst premiere = new Date(timestamps[0] * 1000).toLocaleTimeString('fr-FR', {hour:'2-digit', minute:'2-digit'});\nconst derniere = new Date(timestamps[timestamps.length - 1] * 1000).toLocaleTimeString('fr-FR', {hour:'2-digit', minute:'2-digit'});\n\n// Grouper par caméra\nconst par_camera = {};\nfor (const evt of events) {\n  const cam = evt.camera || 'inconnue';\n  if (!par_camera[cam]) par_camera[cam] = 0;\n  par_camera[cam]++;\n  \n  const date = new Date(evt.start_time * 1000);\n  const heure = date.toLocaleTimeString('fr-FR', {hour:'2-digit', minute:'2-digit'});\n  const score = evt.data?.top_score ? Math.round(evt.data.top_score * 100) : null;\n  const severity = evt.data?.max_severity || 'detection';\n  if (severity === 'alert') anomalies++;\n  const duree = evt.end_time ? Math.round(evt.end_time - evt.start_time) : null;\n  if (duree) total_duree += duree;\n  if (score) { total_score += score; nb_score++; }\n  lignes.push(`- ${heure} [${cam}] : personne (score ${score || '?'}%, durée ~${duree || '?'}s, sévérité: ${severity})`);\n}\n\nconst resume_cameras = Object.entries(par_camera).map(([cam, nb]) => `${cam}: ${nb} détection(s)`).join(', ');\nconst duree_moyenne = total_duree > 0 ? Math.round(total_duree / nb_events) + 's' : '--';\nconst score_moyen = nb_score > 0 ? Math.round(total_score / nb_score) + '%' : '--';\n\nconst resume = `Résumé du ${new Date().toLocaleDateString('fr-FR')} :\\n${nb_events} détection(s) dont ${anomalies} alerte(s).\\nCaméras actives : ${resume_cameras}\\n\\nDétail :\\n${lignes.join('\\n')}`;\n\nconst statut_html = anomalies > 0\n  ? '<span style=\"background:#7B1F1F; color:#F7C1C1; font-size:12px; font-weight:700; padding:5px 14px; border-radius:20px;\">⚠ Attention</span>'\n  : '<span style=\"background:#0F6E56; color:#9FE1CB; font-size:12px; font-weight:700; padding:5px 14px; border-radius:20px;\">✓ RAS</span>';\n\n// Version courte pour Ollama (sans le détail ligne par ligne)\nconst resume_court = `Résumé du ${new Date().toLocaleDateString('fr-FR')} :\n${nb_events} détection(s) dont ${anomalies} alerte(s).\nCaméras actives : ${resume_cameras}\nPremière détection : ${premiere} — Dernière : ${derniere}\nDurée moyenne : ${duree_moyenne} — Score moyen : ${score_moyen}\n\nAlertes entrée : ${par_camera['entree'] || 0} détections dont ${\n  events.filter(e => e.camera === 'entree' && (e.data?.max_severity || '') === 'alert').length\n} alertes entre ${\n  events.filter(e => e.camera === 'entree').map(e => \n    new Date(e.start_time * 1000).toLocaleTimeString('fr-FR', {hour:'2-digit', minute:'2-digit'})\n  ).slice(-1)[0] || '--'\n} et ${premiere}.`;\n\nreturn [{ json: { \n  resume,         // version complète (pour logs/email)\n  resume_court,   // version compressée (pour Ollama)\n  nb_events, anomalies, par_camera,\n  premiere_detection: premiere, derniere_detection: derniere,\n  duree_moyenne, score_moyen, statut_html\n}}];"
+      },
+      "id": "d47ae560-60ee-484f-9c59-9f53936ae1ce",
+      "name": "Code — Formate résumé",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        448,
+        -816
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const raw = $input.item.json.response || 'Erreur génération rapport.';\n\nconst bilan = raw.split(/ANOMALIES/i)[0]\n  .replace(/BILAN\\s*/i, '')\n  .trim();\n\nconst anomalies = raw.includes('ANOMALIES')\n  ? raw.split(/ANOMALIES\\s*\\n*/i)[1].split(/RECOMMANDATIONS?/i)[0].replace(/^\\s*\\n*/, '').trim()\n  : 'Aucune anomalie détectée.';\n\nconst recommandation = raw.includes('RECOMMANDATION')\n  ? raw.split(/RECOMMANDATIONS?\\s*\\n*/i)[1].trim()\n  : 'Aucune action requise.';\n\nreturn [{ json: { rapport_final: raw, bilan, anomalies, recommandation } }];"
+      },
+      "id": "d7ffda70-12f5-4713-83aa-dc640e90dad8",
+      "name": "Code — Extrait réponse Ollama",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1088,
+        -672
+      ]
+    },
+    {
+      "parameters": {
+        "sendTo": "jeanphilippe.belliard84@gmail.com",
+        "subject": "=🏠 SeniorAssist — Rapport du {{ new Date().toLocaleDateString('fr-FR') }}",
+        "message": "=<!DOCTYPE html>\n<html lang=\"fr\">\n<head>\n<meta charset=\"UTF-8\">\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n</head>\n<body style=\"margin:0; padding:0; background:#f0f2f5; font-family:Arial,sans-serif;\">\n<table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"background:#f0f2f5; padding:32px 16px;\">\n<tr><td align=\"center\">\n<table width=\"620\" cellpadding=\"0\" cellspacing=\"0\" style=\"background:#ffffff; border-radius:16px; border:1px solid #e0e0e0; overflow:hidden;\">\n\n  <!-- HEADER -->\n  <tr>\n    <td style=\"background:#1D9E75; padding:28px 32px 24px;\">\n      <table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\">\n        <tr>\n          <td style=\"color:#ffffff; font-size:22px; font-weight:700;\">SeniorAssist</td>\n          <td align=\"right\">{{ $('Code — Formate résumé').item.json.statut_html }}</td>\n        </tr>\n      </table>\n      <p style=\"color:#9FE1CB; font-size:14px; margin:8px 0 8px;\">Rapport de surveillance automatique</p>\n      <p style=\"color:rgba(255,255,255,0.6); font-size:13px; margin:0;\">{{ new Date().toLocaleDateString('fr-FR', {weekday:'long', year:'numeric', month:'long', day:'numeric'}) }}</p>\n    </td>\n  </tr>\n\n  <!-- STATS LIGNE 1 -->\n  <tr>\n    <td style=\"padding:24px 32px 0;\">\n      <table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\">\n        <tr>\n          <td width=\"33%\" style=\"padding-right:5px;\">\n            <table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"background:#EAF3DE; border-radius:10px; border:1px solid #e8e8e8;\">\n              <tr><td style=\"padding:14px 12px; text-align:center;\">\n                <div style=\"font-size:22px; font-weight:700; color:#3B6D11;\">{{ $('Code — Formate résumé').item.json.nb_events }}</div>\n                <div style=\"font-size:11px; color:#999; margin-top:5px; text-transform:uppercase; letter-spacing:0.05em;\">Détections</div>\n              </td></tr>\n            </table>\n          </td>\n          <td width=\"33%\" style=\"padding:0 5px;\">\n            <table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"background:{{ $('Code — Formate résumé').item.json.anomalies > 0 ? '#FCEBEB' : '#EAF3DE' }}; border-radius:10px; border:1px solid #e8e8e8;\">\n              <tr><td style=\"padding:14px 12px; text-align:center;\">\n                <div style=\"font-size:22px; font-weight:700; color:{{ $('Code — Formate résumé').item.json.anomalies > 0 ? '#A32D2D' : '#3B6D11' }};\">{{ $('Code — Formate résumé').item.json.anomalies }}</div>\n                <div style=\"font-size:11px; color:#999; margin-top:5px; text-transform:uppercase; letter-spacing:0.05em;\">Alertes</div>\n              </td></tr>\n            </table>\n          </td>\n          <td width=\"33%\" style=\"padding-left:5px;\">\n            <table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"background:#f6f6f6; border-radius:10px; border:1px solid #e8e8e8;\">\n              <tr><td style=\"padding:14px 12px; text-align:center;\">\n                <div style=\"font-size:16px; font-weight:700; color:#444; padding-top:4px;\">Salon</div>\n                <div style=\"font-size:11px; color:#999; margin-top:5px; text-transform:uppercase; letter-spacing:0.05em;\">Caméra</div>\n              </td></tr>\n            </table>\n          </td>\n        </tr>\n      </table>\n    </td>\n  </tr>\n\n  <!-- STATS LIGNE 2 -->\n  <tr>\n    <td style=\"padding:10px 32px 0;\">\n      <table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\">\n        <tr>\n          <td width=\"33%\" style=\"padding-right:5px;\">\n            <table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"background:#E6F1FB; border-radius:10px; border:1px solid #e8e8e8;\">\n              <tr><td style=\"padding:14px 12px; text-align:center;\">\n                <div style=\"font-size:16px; font-weight:700; color:#0C447C; padding-top:4px;\">{{ $('Code — Formate résumé').item.json.premiere_detection }}</div>\n                <div style=\"font-size:11px; color:#999; margin-top:5px; text-transform:uppercase; letter-spacing:0.05em;\">1ère détection</div>\n              </td></tr>\n            </table>\n          </td>\n          <td width=\"33%\" style=\"padding:0 5px;\">\n            <table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"background:#E6F1FB; border-radius:10px; border:1px solid #e8e8e8;\">\n              <tr><td style=\"padding:14px 12px; text-align:center;\">\n                <div style=\"font-size:16px; font-weight:700; color:#0C447C; padding-top:4px;\">{{ $('Code — Formate résumé').item.json.derniere_detection }}</div>\n                <div style=\"font-size:11px; color:#999; margin-top:5px; text-transform:uppercase; letter-spacing:0.05em;\">Dernière</div>\n              </td></tr>\n            </table>\n          </td>\n          <td width=\"33%\" style=\"padding-left:5px;\">\n            <table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"background:#f6f6f6; border-radius:10px; border:1px solid #e8e8e8;\">\n              <tr><td style=\"padding:14px 12px; text-align:center;\">\n                <div style=\"font-size:16px; font-weight:700; color:#444; padding-top:4px;\">{{ $('Code — Formate résumé').item.json.score_moyen }}</div>\n                <div style=\"font-size:11px; color:#999; margin-top:5px; text-transform:uppercase; letter-spacing:0.05em;\">Score moy.</div>\n              </td></tr>\n            </table>\n          </td>\n        </tr>\n      </table>\n    </td>\n  </tr>\n\n  <!-- BODY -->\n  <tr>\n    <td style=\"padding:24px 32px 28px;\">\n\n      <!-- BILAN -->\n      <table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"margin-bottom:12px; border-radius:10px; border:1px solid #e8e8e8; overflow:hidden;\">\n        <tr><td style=\"background:#EAF3DE; padding:10px 16px; font-size:11px; font-weight:700; letter-spacing:0.08em; text-transform:uppercase; color:#3B6D11;\">Bilan</td></tr>\n        <tr><td style=\"padding:12px 16px; font-size:14px; line-height:1.7; color:#2C2C2A;\">{{ $json.bilan }}</td></tr>\n      </table>\n\n      <!-- ANOMALIES -->\n      <table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"margin-bottom:12px; border-radius:10px; border:1px solid #e8e8e8; overflow:hidden;\">\n        <tr><td style=\"background:#FCEBEB; padding:10px 16px; font-size:11px; font-weight:700; letter-spacing:0.08em; text-transform:uppercase; color:#A32D2D;\">Anomalies</td></tr>\n        <tr><td style=\"padding:12px 16px; font-size:14px; line-height:1.7; color:#2C2C2A;\">{{ $json.anomalies }}</td></tr>\n      </table>\n\n      <!-- RECOMMANDATION -->\n      <table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"margin-bottom:20px; border-radius:10px; border:1px solid #e8e8e8; overflow:hidden;\">\n        <tr><td style=\"background:#E6F1FB; padding:10px 16px; font-size:11px; font-weight:700; letter-spacing:0.08em; text-transform:uppercase; color:#0C447C;\">Recommandation</td></tr>\n        <tr><td style=\"padding:12px 16px; font-size:14px; line-height:1.7; color:#2C2C2A;\">{{ $json.recommandation }}</td></tr>\n      </table>\n\n      <hr style=\"border:none; border-top:1px solid #f0f0f0; margin:20px 0;\">\n      <p style=\"font-size:12px; color:#aaa; margin:0; line-height:1.6;\">\n        Rapport généré automatiquement à 08h00 par SeniorAssist.<br>\n        En cas d'urgence, contactez immédiatement l'équipe soignante.\n      </p>\n    </td>\n  </tr>\n\n  <!-- FOOTER -->\n  <tr>\n    <td style=\"padding:16px 32px 20px; background:#fafafa; border-top:1px solid #f0f0f0;\">\n      <p style=\"font-size:12px; color:#aaa; margin:0;\">SeniorAssist surveille en continu et génère un rapport chaque matin.</p>\n      <p style=\"font-size:12px; color:#ccc; margin:8px 0 0;\">Propulsé par <a href=\"https://web-creat.com\" style=\"color:#1D9E75; text-decoration:none;\">WEB-CREAT</a> · Automatisation IA pour les professionnels</p>\n    </td>\n  </tr>\n\n</table>\n</td></tr>\n</table>\n</body>\n</html>",
+        "options": {
+          "appendAttribution": false,
+          "attachmentsUi": {
+            "attachmentsBinary": [
+              {
+                "property": "photo_salon"
+              },
+              {
+                "property": "photo_entree"
+              }
+            ]
+          }
+        }
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        1968,
+        -384
+      ],
+      "id": "a2604829-161d-4b41-8fb7-107859d37fa7",
+      "name": "Send a message",
+      "webhookId": "c88a055c-2c8d-4507-8b2c-2a7f1ee096b7",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "oWi8NIF0PA1jNesS",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "1Ytq_TEhGvXlqFJX6l9wPuu2japj_JbOgIBk-KkqD5VQ",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 1289643463,
+          "mode": "list",
+          "cachedResultName": "03_Resumes_Journaliers",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1Ytq_TEhGvXlqFJX6l9wPuu2japj_JbOgIBk-KkqD5VQ/edit#gid=1289643463"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Date": "={{ new Date().toLocaleDateString('fr-FR') }}",
+            "Nb_Total": "={{ $('Code — Formate résumé').first().json.nb_events }}",
+            "Nb_Salon": "={{ $('Code — Formate résumé').first().json.par_camera?.salon || 0 }}",
+            "Nb_Entrée": "={{ $('Code — Formate résumé').first().json.par_camera?.entree || 0 }}",
+            "Nb_Alertes": "={{ $('Code — Formate résumé').first().json.anomalies }}",
+            "Première_Détection": "={{ $('Code — Formate résumé').first().json.premiere_detection }}",
+            "Dernière_Détection": "={{ $('Code — Formate résumé').first().json.derniere_detection }}",
+            "Score_Moyen": "={{ $('Code — Formate résumé').first().json.score_moyen }}",
+            "Résumé_IA": "={{ $('Code — Extrait réponse Ollama').first().json.bilan }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "Date",
+              "displayName": "Date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Nb_Total",
+              "displayName": "Nb_Total",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Nb_Salon",
+              "displayName": "Nb_Salon",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Nb_Entrée",
+              "displayName": "Nb_Entrée",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Nb_Alertes",
+              "displayName": "Nb_Alertes",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Première_Détection",
+              "displayName": "Première_Détection",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Dernière_Détection",
+              "displayName": "Dernière_Détection",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Score_Moyen",
+              "displayName": "Score_Moyen",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Résumé_IA",
+              "displayName": "Résumé_IA",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "id": "595e9e44-c4a5-4f4d-b9bb-9b5f2a073753",
+      "name": "Sheets — Log Résumé",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.4,
+      "position": [
+        2176,
+        -304
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "NznwYiyQzqjAKGIB",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "http://localhost:5000/api/salon/person/snapshot.jpg",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file",
+              "outputPropertyName": "photo_salon"
+            }
+          },
+          "timeout": 8000
+        }
+      },
+      "id": "f3a4b5c6-0001-0000-0000-journalier001",
+      "name": "HTTP — Photo Salon Jour",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1312,
+        -608
+      ],
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "url": "http://localhost:5000/api/entree/person/snapshot.jpg",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file",
+              "outputPropertyName": "photo_entree"
+            }
+          },
+          "timeout": 8000
+        }
+      },
+      "id": "f3a4b5c6-0002-0000-0000-journalier002",
+      "name": "HTTP — Photo Entrée Jour",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1552,
+        -528
+      ],
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "jsCode": "const rapport = $('Code — Extrait réponse Ollama').first().json;\nconst salonBin  = $('HTTP — Photo Salon Jour').first().binary?.photo_salon  ?? null;\nconst entreeBin = $('HTTP — Photo Entrée Jour').first().binary?.photo_entree ?? null;\nreturn [{\n  json: { ...rapport, nb_photos: (salonBin ? 1 : 0) + (entreeBin ? 1 : 0) },\n  binary: {\n    ...(salonBin  ? { photo_salon:  salonBin  } : {}),\n    ...(entreeBin ? { photo_entree: entreeBin } : {})\n  }\n}];"
+      },
+      "id": "f3a4b5c6-0003-0000-0000-journalier003",
+      "name": "Code — Prépare Gmail Jour",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1760,
+        -464
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:11434/api/generate",
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ JSON.stringify({\n  model: 'qwen2.5:7b',\n  prompt: \"Tu es un assistant médical pour une équipe soignante.\\n\\nRègles strictes :\\n- Réponds UNIQUEMENT avec le rapport, sans introduction ni formule de politesse\\n- Structure en 3 parties : BILAN, ANOMALIES, RECOMMANDATION\\n- Sois factuel, concis, professionnel\\n- Si aucune anomalie : indique-le clairement\\n- Jamais de \\\"N'hésitez pas\\\", jamais de \\\"Cordialement\\\"\\n\\nDonnées du \" + new Date().toLocaleDateString('fr-FR') + \" :\\n\" + $json.resume_court + \"\\n\\nRapport :\",\n  stream: false\n}) }}",
+        "options": {
+          "timeout": 120000
+        }
+      },
+      "id": "8695f249-37b4-460b-a1f4-b3db06fb06f8",
+      "name": "HTTP — Ollama qwen2.5:7b",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        752,
+        -720
+      ]
+    }
+  ],
+  "connections": {
+    "CRON — 8h00": {
+      "main": [
+        [
+          {
+            "node": "HTTP — Récupère événements Frigate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP — Récupère événements Frigate": {
+      "main": [
+        [
+          {
+            "node": "Code — Formate résumé",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code — Formate résumé": {
+      "main": [
+        [
+          {
+            "node": "HTTP — Ollama qwen2.5:7b",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code — Extrait réponse Ollama": {
+      "main": [
+        [
+          {
+            "node": "HTTP — Photo Salon Jour",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send a message": {
+      "main": [
+        [
+          {
+            "node": "Sheets — Log Résumé",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP — Photo Salon Jour": {
+      "main": [
+        [
+          {
+            "node": "HTTP — Photo Entrée Jour",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP — Photo Entrée Jour": {
+      "main": [
+        [
+          {
+            "node": "Code — Prépare Gmail Jour",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code — Prépare Gmail Jour": {
+      "main": [
+        [
+          {
+            "node": "Send a message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP — Ollama qwen2.5:7b": {
+      "main": [
+        [
+          {
+            "node": "Code — Extrait réponse Ollama",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false,
+    "callerPolicy": "workflowsFromSameOwner",
+    "timeSavedMode": "fixed",
+    "timezone": "Europe/Paris"
+  },
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "createdAt": "2026-03-22 06:35:14.871",
+  "updatedAt": "2026-03-23 12:54:18.218",
+  "description": ""
+}
