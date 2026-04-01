@@ -1,0 +1,156 @@
+{
+  "id": "PCuUn7wxHMWX1mHT",
+  "name": "SeniorAssist — API Rapports",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "GET",
+        "path": "seniorassist-reports",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "f26ca894-0745-4baf-9b5c-a881cfede7eb",
+      "name": "Webhook GET seniorassist-reports",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        240,
+        300
+      ],
+      "webhookId": "e341c422-df92-4e6f-ac0b-044a375822a2"
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "seniorassist-reports-save",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "ecc329f8-49cf-45d2-ba1e-7a0b82779f7d",
+      "name": "Webhook POST save",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        240,
+        540
+      ],
+      "webhookId": "fbcbbed0-be62-4fd0-bf38-345afd51d70c"
+    },
+    {
+      "parameters": {
+        "jsCode": "const q     = $input.all()[0].json.query || {};\nconst sd    = $getWorkflowStaticData('global');\nlet reports = sd.reports || [];\n\n// Filtrer par date si demandé\nif (q.date) reports = reports.filter(r => r.date === q.date);\n\n// Trier du plus récent au plus ancien\nreports = [...reports].sort((a, b) => b.date.localeCompare(a.date));\n\nreturn [{ json: { reports, total: reports.length } }];"
+      },
+      "id": "19844c4e-b497-450a-a3bb-8e34c32712cb",
+      "name": "Lire rapports",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        480,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// ── Sécurité : vérifier le header secret ──────────────────────────\nconst headers = $input.all()[0].json.headers || {};\nconst SECRET  = 'seniorassist-2026';\nif (headers['x-seniorassist-key'] !== SECRET) {\n  return [{ json: { ok: false, error: 'Unauthorized' } }];\n}\n\n// ── Extraire le body ───────────────────────────────────────────────\nconst body       = $input.all()[0].json.body || $input.all()[0].json;\nconst report     = body.report     || '';\nconst eventCount = body.event_count !== undefined ? Number(body.event_count) : null;\nconst camera     = body.camera     || 'zosi';\n\n// ── Construire l'entrée enrichie ───────────────────────────────────\nconst now      = new Date();\nconst dateStr  = now.toISOString().split('T')[0];\nconst dateLabel = now.toLocaleDateString('fr-FR', {\n  day: '2-digit', month: '2-digit', year: 'numeric'\n});\n\nconst entry = {\n  id:          now.getTime(),           // timestamp ms = ID unique\n  date:        dateStr,                  // \"2026-03-20\"\n  dateLabel:   dateLabel,               // \"20/03/2026\"\n  generatedAt: now.toISOString(),       // heure exacte\n  camera:      camera,                  // \"zosi\"\n  event_count: eventCount,              // nb détections (null si non fourni)\n  report:      report                   // texte complet\n};\n\n// ── Persistance avec rotation 90 rapports ─────────────────────────\nconst sd = $getWorkflowStaticData('global');\nif (!sd.reports) sd.reports = [];\n\n// 1 rapport par jour (remplace si même date)\nconst idx = sd.reports.findIndex(r => r.date === dateStr);\nif (idx >= 0) {\n  sd.reports[idx] = entry;\n} else {\n  sd.reports.unshift(entry);\n}\n\n// Rotation : garder max 90 rapports\nif (sd.reports.length > 90) {\n  sd.reports = sd.reports.slice(0, 90);\n}\n\nreturn [{ json: { ok: true, date: dateStr, total: sd.reports.length } }];"
+      },
+      "id": "47bebe28-ea5f-42af-b04e-3c71f26568d7",
+      "name": "Sauvegarder rapport",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        480,
+        540
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "81dd0c16-aaed-41c0-9f4d-dbebf9f971d2",
+      "name": "Répondre",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        720,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "858177da-3021-424b-abf7-f58944425a29",
+      "name": "Répondre save",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        720,
+        540
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook GET seniorassist-reports": {
+      "main": [
+        [
+          {
+            "node": "Lire rapports",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook POST save": {
+      "main": [
+        [
+          {
+            "node": "Sauvegarder rapport",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lire rapports": {
+      "main": [
+        [
+          {
+            "node": "Répondre",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Sauvegarder rapport": {
+      "main": [
+        [
+          {
+            "node": "Répondre save",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
+  },
+  "meta": {},
+  "createdAt": "2026-03-20 18:21:20.341",
+  "updatedAt": "2026-03-20 19:54:39.572",
+  "description": ""
+}
