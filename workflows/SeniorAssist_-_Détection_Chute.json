@@ -1,0 +1,255 @@
+{
+  "id": "XMT2T6YO781xJ83Q",
+  "name": "SeniorAssist — Détection Chute",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {
+        "topics": "frigate/events",
+        "options": {}
+      },
+      "id": "a23e1302-b6dc-4ade-b29f-90f62ac8f321",
+      "name": "MQTT — Frigate events",
+      "type": "n8n-nodes-base.mqttTrigger",
+      "typeVersion": 1,
+      "position": [
+        -1376,
+        -32
+      ],
+      "credentials": {
+        "mqtt": {
+          "id": "bM7VHVnCRozEugf8",
+          "name": "MQTT account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "let payload;\ntry {\n  payload = JSON.parse($input.item.json.message);\n} catch(e) { return []; }\n\n// Uniquement les événements de type 'update' ou 'end' avec label 'person'\nconst validTypes = ['update', 'end'];\nif (!validTypes.includes(payload.type)) return [];\n\nconst after = payload.after || {};\nconst before = payload.before || {};\n\n// Filtre : label doit être 'person'\nif (after.label !== 'person') return [];\n\n// Calcul durée d'immobilité (frame_time - start_time en secondes)\nconst startTime = after.start_time || 0;\nconst frameTime = after.frame_time || after.end_time || 0;\nconst duree = frameTime - startTime;\n\n// Score de confiance\nconst score = Math.round((after.score || 0) * 100);\n\n// Seuil de détection chute : immobilité > 20s ou position basse\n// Frigate ne détecte pas directement les chutes, on utilise la durée au sol\n// et les zones comme proxy\nconst zones = after.current_zones || after.entered_zones || [];\nconst camera = after.camera || 'inconnue';\nconst heure = new Date().toLocaleTimeString('fr-FR', {hour:'2-digit', minute:'2-digit', second:'2-digit'});\nconst heure_num = new Date().getHours();\n\n// Ignorer si durée trop courte (< 15s = simple passage)\nif (duree < 15 && payload.type !== 'end') return [];\n\n// Déterminer le niveau d'alerte\nlet type_alerte, niveau_urgence, message_alerte;\n\nif (duree >= 45 || (payload.type === 'end' && duree >= 30)) {\n  type_alerte = 'CHUTE DÉTECTÉE';\n  niveau_urgence = 'CRITIQUE';\n  message_alerte = `Personne immobile depuis ${Math.round(duree)}s sur la caméra \"${camera}\" à ${heure}${zones.length ? ' (zone: ' + zones.join(', ') + ')' : ''}. Intervention immédiate requise.`;\n} else if (duree >= 15) {\n  type_alerte = 'POSITION AU SOL';\n  niveau_urgence = 'ATTENTION';\n  message_alerte = `Personne au sol depuis ${Math.round(duree)}s détectée sur la caméra \"${camera}\" à ${heure}${zones.length ? ' (zone: ' + zones.join(', ') + ')' : ''}.`;\n} else {\n  return [];\n}\n\nreturn [{ json: {\n  type_alerte,\n  message_alerte,\n  niveau_urgence,\n  heure,\n  camera,\n  score,\n  duree: Math.round(duree),\n  zones\n}}];"
+      },
+      "id": "df863c94-0737-4cb9-b3dc-d52686d8d741",
+      "name": "Code — Détecte Chute",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1120,
+        112
+      ],
+      "alwaysOutputData": false
+    },
+    {
+      "parameters": {
+        "url": "=http://localhost:5000/api/{{ ['salon','entree'].includes($json.camera) ? $json.camera : 'salon' }}/latest.jpg",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file",
+              "outputPropertyName": "photo_camera"
+            }
+          },
+          "timeout": 6000
+        }
+      },
+      "id": "4a4ec564-3825-4b99-b5df-19bdb165e851",
+      "name": "HTTP — Photo Caméra",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -800,
+        64
+      ],
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "jsCode": "const analyse = $('Code — Détecte Chute').first().json;\nconst camBin = $('HTTP — Photo Caméra').first().binary?.photo_camera ?? null;\n\nreturn [{\n  json: { ...analyse, has_photo: !!camBin },\n  binary: camBin ? { photo_camera: camBin } : {}\n}];"
+      },
+      "id": "2b172738-fe5a-493a-b20f-c441122ea8ff",
+      "name": "Code — Prépare Notifs",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -560,
+        144
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "sendPhoto",
+        "chatId": "=8471849130",
+        "binaryData": true,
+        "binaryPropertyName": "photo_camera",
+        "additionalFields": {
+          "caption": "={{ ($json.niveau_urgence === 'CRITIQUE' ? '🚨' : '⚠️') + ' <b>' + $json.type_alerte + ' — SeniorAssist</b>\\n\\n' + $json.message_alerte + '\\n\\nDurée immobile : <b>' + $json.duree + 's</b>\\nNiveau : <b>' + $json.niveau_urgence + '</b>\\nCaméra : ' + $json.camera }}",
+          "parse_mode": "HTML"
+        }
+      },
+      "id": "9bce1e91-3d2e-43ee-a84d-99d475b79677",
+      "name": "Telegram — Alerte Chute",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [
+        -208,
+        -16
+      ],
+      "webhookId": "7687812b-90c4-47c2-940a-d01cf485ddb8",
+      "credentials": {
+        "telegramApi": {
+          "id": "5IqF446S7446SmUc",
+          "name": "agent"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sendTo": "jeanphilippe.belliard84@gmail.com",
+        "subject": "={{ $json.type_alerte + ' — SeniorAssist · Caméra ' + $json.camera }}",
+        "message": "=<!DOCTYPE html>\n<html lang=\"fr\">\n<head><meta charset=\"UTF-8\"></head>\n<body style=\"margin:0; padding:0; background:#f0f2f5; font-family:Arial,sans-serif;\">\n<table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"background:#f0f2f5; padding:32px 16px;\">\n<tr><td align=\"center\">\n<table width=\"600\" cellpadding=\"0\" cellspacing=\"0\" style=\"background:#fff; border-radius:16px; border:1px solid #e0e0e0;\">\n\n  <!-- HEADER -->\n  <tr>\n    <td style=\"background:{{ $json.niveau_urgence === 'CRITIQUE' ? '#A32D2D' : '#BA7517' }}; padding:24px 32px; border-radius:16px 16px 0 0;\">\n      <table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\">\n        <tr>\n          <td style=\"color:#fff; font-size:20px; font-weight:700;\">SeniorAssist</td>\n          <td align=\"right\" style=\"color:rgba(255,255,255,0.8); font-size:13px;\">{{ $json.heure }}</td>\n        </tr>\n      </table>\n      <p style=\"color:rgba(255,255,255,0.9); font-size:14px; margin:6px 0 0;\">Détection Chute · Caméra {{ $json.camera }}</p>\n    </td>\n  </tr>\n\n  <!-- BADGE -->\n  <tr>\n    <td style=\"padding:24px 32px 0;\">\n      <table cellpadding=\"0\" cellspacing=\"0\">\n        <tr>\n          <td style=\"background:{{ $json.niveau_urgence === 'CRITIQUE' ? '#FCEBEB' : '#FAEEDA' }}; color:{{ $json.niveau_urgence === 'CRITIQUE' ? '#A32D2D' : '#854F0B' }}; font-size:13px; font-weight:700; padding:8px 16px; border-radius:8px; letter-spacing:0.05em;\">{{ $json.type_alerte }}</td>\n        </tr>\n      </table>\n    </td>\n  </tr>\n\n  <!-- MESSAGE -->\n  <tr>\n    <td style=\"padding:16px 32px 0;\">\n      <p style=\"font-size:16px; line-height:1.7; color:#2C2C2A; margin:0;\">{{ $json.message_alerte }}</p>\n    </td>\n  </tr>\n\n  <!-- STATS -->\n  <tr>\n    <td style=\"padding:20px 32px 0;\">\n      <table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\">\n        <tr>\n          <td width=\"33%\" style=\"padding-right:4px;\">\n            <table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"background:#f6f6f6; border-radius:10px; border:1px solid #e8e8e8;\">\n              <tr><td style=\"padding:12px; text-align:center;\">\n                <div style=\"font-size:20px; font-weight:700; color:#444;\">{{ $json.duree }}s</div>\n                <div style=\"font-size:11px; color:#999; margin-top:4px; text-transform:uppercase; letter-spacing:0.05em;\">Durée immobile</div>\n              </td></tr>\n            </table>\n          </td>\n          <td width=\"33%\" style=\"padding:0 4px;\">\n            <table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"background:#f6f6f6; border-radius:10px; border:1px solid #e8e8e8;\">\n              <tr><td style=\"padding:12px; text-align:center;\">\n                <div style=\"font-size:20px; font-weight:700; color:#444;\">{{ $json.score }}%</div>\n                <div style=\"font-size:11px; color:#999; margin-top:4px; text-transform:uppercase; letter-spacing:0.05em;\">Score détection</div>\n              </td></tr>\n            </table>\n          </td>\n          <td width=\"33%\" style=\"padding-left:4px;\">\n            <table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"background:#f6f6f6; border-radius:10px; border:1px solid #e8e8e8;\">\n              <tr><td style=\"padding:12px; text-align:center;\">\n                <div style=\"font-size:16px; font-weight:700; color:#444;\">{{ $json.camera }}</div>\n                <div style=\"font-size:11px; color:#999; margin-top:4px; text-transform:uppercase; letter-spacing:0.05em;\">Caméra</div>\n              </td></tr>\n            </table>\n          </td>\n        </tr>\n      </table>\n    </td>\n  </tr>\n\n  <!-- ACTION -->\n  <tr>\n    <td style=\"padding:20px 32px 28px;\">\n      <table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"background:{{ $json.niveau_urgence === 'CRITIQUE' ? '#FCEBEB' : '#FAEEDA' }}; border-radius:10px; border:1px solid {{ $json.niveau_urgence === 'CRITIQUE' ? '#F09595' : '#FAC775' }};\">\n        <tr><td style=\"padding:14px 16px;\">\n          <p style=\"font-size:13px; font-weight:700; color:{{ $json.niveau_urgence === 'CRITIQUE' ? '#A32D2D' : '#854F0B' }}; margin:0 0 4px; text-transform:uppercase; letter-spacing:0.05em;\">Action requise</p>\n          <p style=\"font-size:14px; color:#2C2C2A; margin:0; line-height:1.6;\">{{ $json.niveau_urgence === 'CRITIQUE' ? 'Intervenir immédiatement auprès du résident. Appeler les secours si nécessaire (15 / 18).' : 'Vérifier rapidement l\\'état du résident et l\\'aider à se relever si besoin.' }}</p>\n        </td></tr>\n      </table>\n    </td>\n  </tr>\n\n  <!-- PHOTO -->\n  <tr>\n    <td style=\"padding:0 32px 20px;\">\n      <table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"background:#F5F5F5; border-radius:10px; border:1px solid #E0E0E0;\">\n        <tr><td style=\"padding:14px 16px;\">\n          <p style=\"font-size:13px; font-weight:700; color:#555; margin:0 0 4px; text-transform:uppercase; letter-spacing:0.05em;\">📷 Snapshot caméra {{ $json.camera }}</p>\n          <p style=\"font-size:13px; color:#888; margin:0; line-height:1.5;\">{{ $json.has_photo ? 'Photo ci-jointe — état de la caméra au moment de la détection.' : 'Aucune photo disponible (caméra hors ligne).' }}</p>\n        </td></tr>\n      </table>\n    </td>\n  </tr>\n\n  <!-- FOOTER -->\n  <tr>\n    <td style=\"padding:16px 32px 20px; background:#fafafa; border-top:1px solid #f0f0f0; border-radius:0 0 16px 16px;\">\n      <p style=\"font-size:12px; color:#aaa; margin:0;\">Alerte générée automatiquement par SeniorAssist — Détection Chute.</p>\n      <p style=\"font-size:12px; color:#ccc; margin:6px 0 0;\">Propulsé par <span style=\"color:#1D9E75;\">WEB-CREAT</span> · Automatisation IA pour les professionnels</p>\n    </td>\n  </tr>\n\n</table>\n</td></tr>\n</table>\n</body>\n</html>",
+        "options": {
+          "appendAttribution": false,
+          "attachmentsUi": {
+            "attachmentsBinary": [
+              {
+                "property": "photo_camera"
+              }
+            ]
+          }
+        }
+      },
+      "id": "b5cf9c0f-d8d9-4df3-b87d-70e3110e8f5c",
+      "name": "Gmail — Alerte Chute",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        -96,
+        432
+      ],
+      "webhookId": "d660423e-904b-4684-a186-f95feab2af6a",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "oWi8NIF0PA1jNesS",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "1Ytq_TEhGvXlqFJX6l9wPuu2japj_JbOgIBk-KkqD5VQ",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "05_Chutes",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Date": "={{ new Date().toLocaleDateString('fr-FR') }}",
+            "Heure": "={{ $('Code — Détecte Chute').first().json.heure }}",
+            "Type_Alerte": "={{ $('Code — Détecte Chute').first().json.type_alerte }}",
+            "Niveau_Urgence": "={{ $('Code — Détecte Chute').first().json.niveau_urgence }}",
+            "Caméra": "={{ $('Code — Détecte Chute').first().json.camera }}",
+            "Durée_s": "={{ $('Code — Détecte Chute').first().json.duree }}",
+            "Score_Détection": "={{ $('Code — Détecte Chute').first().json.score }}",
+            "Message": "={{ $('Code — Détecte Chute').first().json.message_alerte }}",
+            "Acquittée": "FALSE",
+            "Note_Soignant": "",
+            "Acquitté_le": ""
+          },
+          "schema": [],
+          "matchingColumns": []
+        },
+        "options": {}
+      },
+      "id": "ded87f42-fb53-4bde-ad65-6af00ce7cf54",
+      "name": "Sheets — Log Chute",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.4,
+      "position": [
+        208,
+        448
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "NznwYiyQzqjAKGIB",
+          "name": "Google Sheets account"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "MQTT — Frigate events": {
+      "main": [
+        [
+          {
+            "node": "Code — Détecte Chute",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code — Détecte Chute": {
+      "main": [
+        [
+          {
+            "node": "HTTP — Photo Caméra",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP — Photo Caméra": {
+      "main": [
+        [
+          {
+            "node": "Code — Prépare Notifs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code — Prépare Notifs": {
+      "main": [
+        [
+          {
+            "node": "Telegram — Alerte Chute",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Gmail — Alerte Chute",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gmail — Alerte Chute": {
+      "main": [
+        [
+          {
+            "node": "Sheets — Log Chute",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "meta": {},
+  "createdAt": "2026-03-23 17:18:20.058",
+  "updatedAt": "2026-03-23 17:21:44.270",
+  "description": ""
+}
