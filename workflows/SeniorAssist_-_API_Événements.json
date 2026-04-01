@@ -1,0 +1,113 @@
+{
+  "id": "Si2KG6wJU5UsBInL",
+  "name": "SeniorAssist — API Événements",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "GET",
+        "path": "seniorassist-events",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "e4cef70f-c8c6-4817-89b1-fc6ba6083d9c",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        240,
+        300
+      ],
+      "webhookId": "9324e3b8-a73e-4d66-9911-22d95f19b410"
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=http://localhost:5000/api/events?camera=zosi&limit=50&after={{ $json.query.after || Math.floor(Date.now()/1000)-86400 }}&before={{ $json.query.before || Math.floor(Date.now()/1000) }}",
+        "options": {}
+      },
+      "id": "50273988-91a3-4a10-8cda-9ac1b5e72d58",
+      "name": "Frigate Events",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        480,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "\n// HTTP node splits JSON array → each $input item = one Frigate event\nconst query  = $('Webhook').first().json.query || {};\nconst pid    = parseInt(query.patientId) || 1;\nconst CAMERAS = { 1: [\"zosi\"], 2: [] };\nconst NAMES   = { 1: \"Madeleine Dupont\", 2: \"Robert Martin\" };\n\nconst cameras = CAMERAS[pid] || [];\nif (cameras.length === 0)\n  return [{ json: { events: [], total: 0, patient: NAMES[pid] || 'Inconnu' } }];\n\n// Each item = one event object (HTTP node auto-splits arrays)\nconst evts = $input.all().map(i => i.json);\n\nconst formatted = evts.map(e => {\n  const d = new Date(e.start_time * 1000);\n  return {\n    id: e.id,\n    time: d.getHours().toString().padStart(2,'0') + ':' + d.getMinutes().toString().padStart(2,'0'),\n    timestamp: e.start_time,\n    label: e.label,\n    score: Math.round(((e.data && e.data.top_score) || e.top_score || 0) * 100),\n    camera: e.camera,\n    hasSnapshot: !!e.has_snapshot,\n    hasClip: !!e.has_clip\n  };\n});\n\nreturn [{ json: { events: formatted, total: formatted.length, patient: NAMES[pid] || 'Inconnu' } }];\n"
+      },
+      "id": "aaa2310a-d668-4719-99be-0664aeef5517",
+      "name": "Formater Events",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        720,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "fde50726-f332-472e-984b-c53777cb3680",
+      "name": "Répondre",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        960,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Frigate Events",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Frigate Events": {
+      "main": [
+        [
+          {
+            "node": "Formater Events",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Formater Events": {
+      "main": [
+        [
+          {
+            "node": "Répondre",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
+  },
+  "meta": {},
+  "createdAt": "2026-03-20 18:26:34.062",
+  "updatedAt": "2026-03-20 18:33:58.461",
+  "description": ""
+}
