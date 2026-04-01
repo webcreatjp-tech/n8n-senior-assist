@@ -1,0 +1,149 @@
+{
+  "id": "qn21LsHMWS4s8hTa",
+  "name": "SeniorAssist — Dashboard Supervision",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {
+        "path": "seniorassist-dashboard",
+        "authentication": "basicAuth",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "4c2d7830-1a6c-496a-a0e0-d770d97f21c1",
+      "name": "Webhook — Dashboard",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -400,
+        -416
+      ],
+      "webhookId": "seniorassist-dashboard",
+      "credentials": {
+        "httpBasicAuth": {
+          "id": "f8krbGeAR8qG9kJI",
+          "name": "Unnamed credential"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "http://localhost:5000/api/events",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "label",
+              "value": "person"
+            },
+            {
+              "name": "after",
+              "value": "={{ Math.floor(Date.now() / 1000) - 86400 }}"
+            },
+            {
+              "name": "limit",
+              "value": "50"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "id": "1e00b088-3823-4bf0-985a-96002c304ac6",
+      "name": "HTTP — Événements Frigate",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -32,
+        -416
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const events = $input.all().map(i => i.json).filter(e => e.id);\n\n// --- STATS GLOBALES ---\nconst nb_events = events.length;\nlet nb_alertes = 0, total_score = 0, nb_score = 0;\nconst timestamps = [];\nconst par_camera = {};\n\nfor (const evt of events) {\n  const cam = evt.camera || 'inconnue';\n  if (!par_camera[cam]) par_camera[cam] = { nb: 0, alertes: 0, scores: [], derniere: null };\n  par_camera[cam].nb++;\n  if (evt.data?.max_severity === 'alert') { nb_alertes++; par_camera[cam].alertes++; }\n  if (evt.data?.top_score) {\n    total_score += evt.data.top_score * 100;\n    nb_score++;\n    par_camera[cam].scores.push(evt.data.top_score * 100);\n  }\n  if (evt.start_time) {\n    timestamps.push(evt.start_time);\n    if (!par_camera[cam].derniere || evt.start_time > par_camera[cam].derniere) par_camera[cam].derniere = evt.start_time;\n  }\n}\n\ntimestamps.sort();\n\nconst score_moyen = nb_score > 0 ? Math.round(total_score / nb_score) + '%' : '--';\nconst premiere_detection = timestamps.length > 0 ? new Date(timestamps[0] * 1000).toLocaleTimeString('fr-FR', {hour:'2-digit', minute:'2-digit'}) : '--';\nconst derniere_detection = timestamps.length > 0 ? new Date(timestamps[timestamps.length-1] * 1000).toLocaleTimeString('fr-FR', {hour:'2-digit', minute:'2-digit'}) : '--';\nconst maintenant = new Date().toLocaleTimeString('fr-FR', {hour:'2-digit', minute:'2-digit', second:'2-digit'});\nconst date_longue = new Date().toLocaleDateString('fr-FR', {weekday:'long', year:'numeric', month:'long', day:'numeric'});\n\n// --- STATUT GLOBAL ---\nconst statut_global_html = nb_alertes > 0\n  ? `<div class=\"status-banner alert\"><div class=\"dot dot-alert\"></div>${nb_alertes} alerte(s) active(s) — Intervention requise</div>`\n  : `<div class=\"status-banner ok\"><div class=\"dot dot-ok\"></div>Toutes les caméras — RAS</div>`;\n\nconst alertes_sub = nb_alertes > 0 ? 'Intervention requise' : 'Aucune anomalie';\nconst alertes_gstat_class = nb_alertes > 0 ? 'alert' : 'ok';\n\n// --- CAMERAS ROWS ---\nconst cameras_rows = Object.entries(par_camera).map(([cam, s]) => {\n  const score_cam = s.scores.length > 0 ? Math.round(s.scores.reduce((a,b)=>a+b,0)/s.scores.length) + '%' : '--';\n  const derniere_cam = s.derniere ? new Date(s.derniere * 1000).toLocaleTimeString('fr-FR', {hour:'2-digit', minute:'2-digit'}) : '--';\n  const badge = s.alertes > 0\n    ? `<span style=\"font-size:10px;font-weight:800;padding:3px 10px;border-radius:20px;background:#fdf0ef;color:#c0392b;letter-spacing:.3px;\">⚠ ALERTE</span>`\n    : `<span style=\"font-size:10px;font-weight:800;padding:3px 10px;border-radius:20px;background:#e6f5ec;color:#1a5c30;letter-spacing:.3px;\">● RAS</span>`;\n  return `<tr>\n    <td style=\"font-weight:700;color:#111d15;\">${cam}</td>\n    <td style=\"color:#3a5a3e;\">${s.nb}</td>\n    <td>${badge}</td>\n    <td style=\"color:#7a9b80;\">${score_cam}</td>\n    <td style=\"color:#7a9b80;\">${derniere_cam}</td>\n  </tr>`;\n}).join('');\n\n// --- TIMELINE ---\nconst tl = new Array(24).fill(0);\nfor (const ts of timestamps) tl[new Date(ts * 1000).getHours()]++;\nconst timeline_labels_json = JSON.stringify(Array.from({length:24}, (_,i) => i+'h'));\nconst timeline_data_json = JSON.stringify(tl);\n\n// --- ALERTES ROWS ---\nconst alertes_events = events.filter(e => e.data?.max_severity === 'alert').slice(0, 10);\nconst alertes_rows = alertes_events.length === 0\n  ? '<div class=\"empty-state\">Aucune alerte dans les dernières 24h</div>'\n  : alertes_events.map(evt => {\n      const heure = new Date(evt.start_time * 1000).toLocaleTimeString('fr-FR', {hour:'2-digit', minute:'2-digit', second:'2-digit'});\n      const score = Math.round((evt.data?.top_score || 0) * 100);\n      const duree = evt.end_time ? Math.round(evt.end_time - evt.start_time) + 's' : 'en cours';\n      return `<div class=\"alert-row\">\n        <div class=\"alert-time\">${heure}</div>\n        <div class=\"alert-cam\">${evt.camera || 'inconnue'} · ${duree}</div>\n        <div><span class=\"badge-alert\">Alerte</span></div>\n        <div class=\"alert-score\">${score}%</div>\n      </div>`;\n    }).join('');\n\n// --- SNAPSHOT ---\nconst dernier_evt = events.find(e => e.has_snapshot);\nconst snapshot_html = dernier_evt\n  ? `<img class=\"snapshot-img\" src=\"http://localhost:5000/api/events/${dernier_evt.id}/snapshot.jpg\" alt=\"Snapshot\">`\n  : `<div class=\"snapshot-placeholder\"><svg width=\"28\" height=\"28\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"#7a9b80\" stroke-width=\"1.5\"><rect x=\"2\" y=\"3\" width=\"20\" height=\"14\" rx=\"2\"/><path d=\"M8 21h8M12 17v4\"/></svg>Aucun snapshot</div>`;\nconst snapshot_cam = dernier_evt?.camera || '--';\n\n// --- LECTURE + REMPLACEMENT ---\nconst fs = require('fs');\nlet html = fs.readFileSync('/home/belliard/.n8n/seniorassist-dashboard-v5.html', 'utf8');\n\nhtml = html\n  .replace('STATUT_GLOBAL_HTML', statut_global_html)\n  .replace('MAINTENANT', maintenant)\n  .replace('DATE_LONGUE', date_longue)\n  .replace('ALERTES_GSTAT_CLASS', alertes_gstat_class)\n  .replace('ALERTES_SUB', alertes_sub)\n  .replace('ALERTES_ROWS', alertes_rows)\n  .replace('SNAPSHOT_HTML', snapshot_html)\n  .replace('CAMERAS_ROWS', cameras_rows)\n  .replace('SNAPSHOT_CAM', snapshot_cam)\n  .replace('TIMELINE_LABELS', timeline_labels_json)\n  .replace('TIMELINE_DATA', timeline_data_json);\n\nwhile (html.includes('NB_EVENTS')) html = html.replace('NB_EVENTS', nb_events);\nwhile (html.includes('NB_ALERTES')) html = html.replace('NB_ALERTES', nb_alertes);\nwhile (html.includes('PREMIERE_DETECTION')) html = html.replace('PREMIERE_DETECTION', premiere_detection);\nwhile (html.includes('DERNIERE_DETECTION')) html = html.replace('DERNIERE_DETECTION', derniere_detection);\nwhile (html.includes('SCORE_MOYEN')) html = html.replace('SCORE_MOYEN', score_moyen);\n\nreturn [{ json: { html } }];"
+      },
+      "id": "4b72239e-dbd9-4599-94d6-84ffe3b0f93c",
+      "name": "Code — Génère Dashboard HTML",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        352,
+        -384
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "={{ $json.html }}",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "text/html; charset=utf-8"
+              }
+            ]
+          }
+        }
+      },
+      "id": "efc48f0d-30fb-4c22-8b37-ffdc75ab6698",
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        656,
+        -368
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook — Dashboard": {
+      "main": [
+        [
+          {
+            "node": "HTTP — Événements Frigate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP — Événements Frigate": {
+      "main": [
+        [
+          {
+            "node": "Code — Génère Dashboard HTML",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code — Génère Dashboard HTML": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false,
+    "timeSavedMode": "fixed",
+    "timezone": "Europe/Paris",
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "createdAt": "2026-03-22 09:32:15.092",
+  "updatedAt": "2026-03-23 14:07:46.906",
+  "description": ""
+}
