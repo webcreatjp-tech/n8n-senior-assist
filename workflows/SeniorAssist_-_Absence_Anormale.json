@@ -1,0 +1,307 @@
+{
+  "id": "iOXzwk1h0uV3mVFM",
+  "name": "SeniorAssist — Absence Anormale",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "*/30 8-20 * * *"
+            }
+          ]
+        }
+      },
+      "id": "359d3f52-92d0-49d7-af8d-2eb3df4b3c3b",
+      "name": "CRON — Toutes les 30min (8h-20h)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -128,
+        -16
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=http://localhost:5000/api/events?after={{ Math.floor((Date.now() - 7200000) / 1000) }}",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "label",
+              "value": "person"
+            },
+            {
+              "name": "after",
+              "value": "={{ Math.floor(Date.now() / 1000) - 7200 }}"
+            },
+            {
+              "name": "limit",
+              "value": "1"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "id": "8229a9c3-e9f1-4e33-b179-228b2d6a6c09",
+      "name": "HTTP — Vérifie dernière détection",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        208,
+        -208
+      ],
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "jsCode": "const events = $input.all().map(i => i.json);\n\n// Si au moins un événement dans les 2h → tout va bien\nif (events && events.length > 0 && events[0].id) {\n  return [];\n}\n\n// Aucune détection depuis 2h en journée → anomalie\nconst heure = new Date().toLocaleTimeString('fr-FR', {hour:'2-digit', minute:'2-digit'});\nconst heure_num = new Date().getHours();\n\n// Double vérification horaire (8h-20h)\nif (heure_num < 8 || heure_num > 20) return [];\n\nreturn [{ json: {\n  type_alerte: 'ABSENCE ANORMALE',\n  message_alerte: `Aucune présence détectée (salon ou entrée) depuis plus de 2 heures. Dernière vérification à ${heure}. Le résident n'a pas été vu depuis un moment inhabituel.`,\n  niveau_urgence: 'ATTENTION',\n  heure,\n  camera: 'toutes'\n}}];"
+      },
+      "id": "4f081145-3529-440a-9bf1-2055f20d6264",
+      "name": "Code — Vérifie absence",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        480,
+        16
+      ]
+    },
+    {
+      "parameters": {
+        "sendTo": "jeanphilippe.belliard84@gmail.com",
+        "subject": "=⚠️ SeniorAssist — ABSENCE ANORMALE détectée à {{ $json.heure }}",
+        "message": "=<!DOCTYPE html>\n<html lang=\"fr\">\n<head><meta charset=\"UTF-8\"></head>\n<body style=\"margin:0; padding:0; background:#f0f2f5; font-family:Arial,sans-serif;\">\n<table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"background:#f0f2f5; padding:32px 16px;\">\n<tr><td align=\"center\">\n<table width=\"600\" cellpadding=\"0\" cellspacing=\"0\" style=\"background:#fff; border-radius:16px; border:1px solid #e0e0e0;\">\n\n  <tr>\n    <td style=\"background:#BA7517; padding:24px 32px; border-radius:16px 16px 0 0;\">\n      <table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\">\n        <tr>\n          <td style=\"color:#fff; font-size:20px; font-weight:700;\">SeniorAssist</td>\n          <td align=\"right\" style=\"color:rgba(255,255,255,0.8); font-size:13px;\">{{ $json.heure }}</td>\n        </tr>\n      </table>\n      <p style=\"color:rgba(255,255,255,0.9); font-size:14px; margin:6px 0 0;\">Alerte automatique · Caméra {{ $json.camera }}</p>\n    </td>\n  </tr>\n\n  <tr>\n    <td style=\"padding:24px 32px 0;\">\n      <table cellpadding=\"0\" cellspacing=\"0\">\n        <tr>\n          <td style=\"background:#FAEEDA; color:#854F0B; font-size:13px; font-weight:700; padding:8px 16px; border-radius:8px; letter-spacing:0.05em;\">⚠️ ABSENCE ANORMALE</td>\n        </tr>\n      </table>\n    </td>\n  </tr>\n\n  <tr>\n    <td style=\"padding:16px 32px 0;\">\n      <p style=\"font-size:16px; line-height:1.7; color:#2C2C2A; margin:0;\">{{ $json.message_alerte }}</p>\n    </td>\n  </tr>\n\n  <tr>\n    <td style=\"padding:20px 32px 28px;\">\n      <table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"background:#FAEEDA; border-radius:10px; border:1px solid #FAC775;\">\n        <tr><td style=\"padding:14px 16px;\">\n          <p style=\"font-size:13px; font-weight:700; color:#854F0B; margin:0 0 4px; text-transform:uppercase; letter-spacing:0.05em;\">Action requise</p>\n          <p style=\"font-size:14px; color:#2C2C2A; margin:0; line-height:1.6;\">Contacter ou rendre visite au résident pour vérifier son état. Signaler l'absence dans le cahier de suivi.</p>\n        </td></tr>\n      </table>\n    </td>\n  </tr>\n\n  <!-- PHOTOS CAMÉRAS -->\n  <tr>\n    <td style=\"padding:0 32px 16px;\">\n      <table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"background:#F5F5F5; border-radius:10px; border:1px solid #E0E0E0;\">\n        <tr><td style=\"padding:14px 16px;\">\n          <p style=\"font-size:13px; font-weight:700; color:#555; margin:0 0 4px; text-transform:uppercase; letter-spacing:0.05em;\">📷 État actuel des caméras</p>\n          <p style=\"font-size:13px; color:#888; margin:0; line-height:1.5;\">{{ $json.nb_photos > 0 ? $json.nb_photos + ' photo(s) ci-jointe(s) — salon' + ($json.nb_photos > 1 ? ' + entrée' : '') + '.' : 'Aucune photo disponible (caméras hors ligne).' }}</p>\n        </td></tr>\n      </table>\n    </td>\n  </tr>\n\n  <tr>\n    <td style=\"padding:16px 32px 20px; background:#fafafa; border-top:1px solid #f0f0f0; border-radius:0 0 16px 16px;\">\n      <p style=\"font-size:12px; color:#aaa; margin:0;\">Alerte générée automatiquement par SeniorAssist.</p>\n      <p style=\"font-size:12px; color:#ccc; margin:6px 0 0;\">Propulsé par <span style=\"color:#1D9E75;\">WEB-CREAT</span> · Automatisation IA pour les professionnels</p>\n    </td>\n  </tr>\n\n</table>\n</td></tr>\n</table>\n</body>\n</html>",
+        "options": {
+          "appendAttribution": false,
+          "attachmentsUi": {
+            "attachmentsBinary": [
+              {
+                "property": "photo_salon"
+              },
+              {
+                "property": "photo_entree"
+              }
+            ]
+          }
+        }
+      },
+      "id": "35521f15-e4e0-448e-b589-7cc3958f4d71",
+      "name": "Gmail — Alerte absence",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        1632,
+        0
+      ],
+      "webhookId": "5ae2fa17-a384-42b6-ad33-584fa7e8bade",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "oWi8NIF0PA1jNesS",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "1Ytq_TEhGvXlqFJX6l9wPuu2japj_JbOgIBk-KkqD5VQ",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 695805266,
+          "mode": "list",
+          "cachedResultName": "02_Alertes",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1Ytq_TEhGvXlqFJX6l9wPuu2japj_JbOgIBk-KkqD5VQ/edit#gid=695805266"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Date": "={{ new Date().toLocaleDateString('fr-FR') }}",
+            "Heure": "={{ $('Code — Vérifie absence').first().json.heure }}",
+            "Type_Alerte": "={{ $('Code — Vérifie absence').first().json.type_alerte }}",
+            "Niveau_Urgence": "={{ $('Code — Vérifie absence').first().json.niveau_urgence }}",
+            "Caméra": "={{ $('Code — Vérifie absence').first().json.camera }}",
+            "Message": "={{ $('Code — Vérifie absence').first().json.message_alerte }}",
+            "Acquittée": "FALSE",
+            "Note_Soignant": "",
+            "Acquitté_le": ""
+          },
+          "schema": [],
+          "matchingColumns": []
+        },
+        "options": {}
+      },
+      "id": "fe298c9e-80c8-41b7-8a3a-277ca2375bdc",
+      "name": "Sheets — Log Absence",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.4,
+      "position": [
+        1984,
+        -160
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "NznwYiyQzqjAKGIB",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "http://localhost:5000/api/salon/latest.jpg",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file",
+              "outputPropertyName": "photo_salon"
+            }
+          },
+          "timeout": 8000
+        }
+      },
+      "id": "c1d2e3f4-0001-0000-0000-photo00salon1",
+      "name": "HTTP — Photo Salon",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        800,
+        -288
+      ],
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "url": "http://localhost:5000/api/entree/latest.jpg",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file",
+              "outputPropertyName": "photo_entree"
+            }
+          },
+          "timeout": 8000
+        }
+      },
+      "id": "c1d2e3f4-0002-0000-0000-photo0entree2",
+      "name": "HTTP — Photo Entrée",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1072,
+        48
+      ],
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// Récupère les données d'absence\nconst absence = $('Code — Vérifie absence').first().json;\n\n// Snapshots des deux caméras (peut être null si caméra hors ligne)\nconst salonBin  = $('HTTP — Photo Salon').first().binary?.photo_salon  ?? null;\nconst entreeBin = $('HTTP — Photo Entrée').first().binary?.photo_entree ?? null;\n\n// Construit le résultat avec JSON + binaires\nconst binary = {};\nif (salonBin)  binary.photo_salon  = salonBin;\nif (entreeBin) binary.photo_entree = entreeBin;\n\nconst nbPhotos = Object.keys(binary).length;\nreturn [{\n  json: { ...absence, nb_photos: nbPhotos },\n  binary\n}];"
+      },
+      "id": "c1d2e3f4-0003-0000-0000-codemerge0003",
+      "name": "Code — Prépare Gmail",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1360,
+        -208
+      ]
+    }
+  ],
+  "connections": {
+    "CRON — Toutes les 30min (8h-20h)": {
+      "main": [
+        [
+          {
+            "node": "HTTP — Vérifie dernière détection",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP — Vérifie dernière détection": {
+      "main": [
+        [
+          {
+            "node": "Code — Vérifie absence",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code — Vérifie absence": {
+      "main": [
+        [
+          {
+            "node": "HTTP — Photo Salon",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gmail — Alerte absence": {
+      "main": [
+        [
+          {
+            "node": "Sheets — Log Absence",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP — Photo Salon": {
+      "main": [
+        [
+          {
+            "node": "HTTP — Photo Entrée",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP — Photo Entrée": {
+      "main": [
+        [
+          {
+            "node": "Code — Prépare Gmail",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code — Prépare Gmail": {
+      "main": [
+        [
+          {
+            "node": "Gmail — Alerte absence",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false,
+    "timeSavedMode": "fixed",
+    "timezone": "Europe/Paris",
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "meta": {},
+  "createdAt": "2026-03-22 08:37:38.518",
+  "updatedAt": "2026-03-23 10:26:51.554",
+  "description": ""
+}
