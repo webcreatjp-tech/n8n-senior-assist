@@ -1,0 +1,303 @@
+{
+  "id": "ALUKnZAHGVccvIcC",
+  "name": "SeniorAssist — Rapport Hebdomadaire",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 8 * * 1"
+            }
+          ]
+        }
+      },
+      "id": "e6c6c7eb-52d2-4c08-be8d-d77a18960055",
+      "name": "CRON — Lundi 8h00",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        16,
+        -128
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=http://localhost:5000/api/events?after={{ Math.floor((Date.now() - 604800000) / 1000) }}",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "label",
+              "value": "person"
+            },
+            {
+              "name": "after",
+              "value": "={{ Math.floor(Date.now() / 1000) - 604800 }}"
+            },
+            {
+              "name": "limit",
+              "value": "500"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "id": "20fab5da-db32-449a-809c-8854dd5eadb3",
+      "name": "HTTP — Événements 7 jours",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        256,
+        -128
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const events = $input.all().map(i => i.json).filter(e => e.id);\n\nif (!events || events.length === 0) {\n  return [{ json: {\n    resume: 'Aucun événement détecté cette semaine.',\n    nb_total: 0,\n    nb_alertes: 0,\n    jours_data: '{}',\n    score_moyen: '--',\n    premiere: '--',\n    derniere: '--'\n  }}];\n}\n\n// --- STATS GLOBALES ---\nconst nb_total = events.length;\nlet nb_alertes = 0;\nlet total_score = 0;\nlet nb_score = 0;\n\n// --- PAR JOUR ---\nconst jours = {};\nconst jours_noms = ['Dimanche','Lundi','Mardi','Mercredi','Jeudi','Vendredi','Samedi'];\n\nfor (const evt of events) {\n  const date = new Date(evt.start_time * 1000);\n  const cle = date.toLocaleDateString('fr-FR');\n  const jour_nom = jours_noms[date.getDay()];\n\n  if (!jours[cle]) jours[cle] = { nom: jour_nom, date: cle, nb: 0, alertes: 0, scores: [], premiere: null, derniere: null };\n\n  jours[cle].nb++;\n  if (evt.data && evt.data.max_severity === 'alert') { jours[cle].alertes++; nb_alertes++; }\n  if (evt.data && evt.data.top_score) {\n    jours[cle].scores.push(evt.data.top_score * 100);\n    total_score += evt.data.top_score * 100;\n    nb_score++;\n  }\n  if (!jours[cle].premiere || evt.start_time < jours[cle].premiere) jours[cle].premiere = evt.start_time;\n  if (!jours[cle].derniere || evt.start_time > jours[cle].derniere) jours[cle].derniere = evt.start_time;\n}\n\nconst score_moyen = nb_score > 0 ? Math.round(total_score / nb_score) + '%' : '--';\n\n// --- RÉSUMÉ TEXTE PAR JOUR ---\nconst lignes_jours = Object.values(jours).sort((a,b) => {\n  const da = a.date.split('/').reverse().join('-');\n  const db = b.date.split('/').reverse().join('-');\n  return da.localeCompare(db);\n}).map(j => {\n  const score_j = j.scores.length > 0 ? Math.round(j.scores.reduce((a,b)=>a+b,0)/j.scores.length) + '%' : '--';\n  const premiere_h = j.premiere ? new Date(j.premiere * 1000).toLocaleTimeString('fr-FR', {hour:'2-digit', minute:'2-digit'}) : '--';\n  const derniere_h = j.derniere ? new Date(j.derniere * 1000).toLocaleTimeString('fr-FR', {hour:'2-digit', minute:'2-digit'}) : '--';\n  return `${j.nom} ${j.date} : ${j.nb} détection(s), ${j.alertes} alerte(s), lever ~${premiere_h}, coucher ~${derniere_h}, score moyen ${score_j}`;\n}).join('\\n');\n\n// --- SEMAINE ---\nconst debut_semaine = new Date(Math.min(...events.map(e => e.start_time)) * 1000).toLocaleDateString('fr-FR');\nconst fin_semaine = new Date(Math.max(...events.map(e => e.start_time)) * 1000).toLocaleDateString('fr-FR');\n\nconst resume = `Rapport hebdomadaire du ${debut_semaine} au ${fin_semaine}\\n\\nSTATISTIQUES GLOBALES:\\n- Total détections : ${nb_total}\\n- Total alertes : ${nb_alertes}\\n- Score moyen IA : ${score_moyen}\\n- Nombre de jours avec activité : ${Object.keys(jours).length}\\n\\nDÉTAIL PAR JOUR:\\n${lignes_jours}`;\n\nreturn [{ json: { resume, nb_total, nb_alertes, score_moyen, debut_semaine, fin_semaine, nb_jours: Object.keys(jours).length } }];"
+      },
+      "id": "8a82a944-3924-4e85-9d2d-7873cd54a277",
+      "name": "Code — Résumé hebdomadaire",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        496,
+        -128
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:11434/api/generate",
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ JSON.stringify({\n  model: 'qwen2.5:7b',\n  prompt: \"Tu es un assistant médical pour une équipe soignante en EHPAD.\\n\\nRègles strictes :\\n- Réponds UNIQUEMENT avec le rapport, sans introduction ni formule de politesse\\n- Structure en 4 parties : BILAN SEMAINE, JOURS NOTABLES, TENDANCES, RECOMMANDATIONS\\n- Sois factuel, concis, professionnel\\n- Identifie les patterns : heures de lever/coucher habituelles, jours anormaux\\n- Jamais de formule de politesse\\n\\nDonnées de la semaine :\\n\" + $json.resume + \"\\n\\nRapport hebdomadaire :\",\n  stream: false\n}) }}",
+        "options": {
+          "timeout": 180000
+        }
+      },
+      "id": "08d6cf1d-8faa-48ac-8cf2-e6ded3a77f16",
+      "name": "HTTP — Ollama Analyse Semaine",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        736,
+        -128
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const raw = $input.item.json.response || 'Erreur génération rapport.';\nconst rapport_final = raw.replace(/\\\\n/g, '\\n').trim();\n\nconst extraire = (texte, debut, fin) => {\n  if (!texte.includes(debut)) return 'Non disponible.';\n  const apres = texte.split(debut)[1];\n  if (!fin || !apres.includes(fin)) return apres.trim();\n  return apres.split(fin)[0].trim();\n};\n\nconst bilan = extraire(rapport_final, 'BILAN SEMAINE', 'JOURS NOTABLES').replace(/^:\\s*/, '');\nconst jours_notables = extraire(rapport_final, 'JOURS NOTABLES', 'TENDANCES').replace(/^:\\s*/, '');\nconst tendances = extraire(rapport_final, 'TENDANCES', 'RECOMMANDATIONS').replace(/^:\\s*/, '');\nconst recommandations = extraire(rapport_final, 'RECOMMANDATIONS', null).replace(/^:\\s*/, '');\n\nreturn [{ json: { rapport_final, bilan, jours_notables, tendances, recommandations } }];"
+      },
+      "id": "e9c14bd1-556d-4d4f-bd21-055daf1a119d",
+      "name": "Code — Extrait rapport",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        976,
+        -128
+      ]
+    },
+    {
+      "parameters": {
+        "sendTo": "jeanphilippe.belliard84@gmail.com",
+        "subject": "=📊 SeniorAssist — Rapport Hebdomadaire du {{ $('Code — Résumé hebdomadaire').item.json.debut_semaine }} au {{ $('Code — Résumé hebdomadaire').item.json.fin_semaine }}",
+        "message": "=<!DOCTYPE html>\n<html lang=\"fr\">\n<head><meta charset=\"UTF-8\"></head>\n<body style=\"margin:0; padding:0; background:#f0f2f5; font-family:Arial,sans-serif;\">\n<table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"background:#f0f2f5; padding:32px 16px;\">\n<tr><td align=\"center\">\n<table width=\"640\" cellpadding=\"0\" cellspacing=\"0\" style=\"background:#fff; border-radius:16px; border:1px solid #e0e0e0;\">\n\n  <tr>\n    <td style=\"background:#1D9E75; padding:28px 32px 24px; border-radius:16px 16px 0 0;\">\n      <table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\">\n        <tr>\n          <td style=\"color:#fff; font-size:22px; font-weight:700;\">SeniorAssist</td>\n          <td align=\"right\"><span style=\"background:rgba(255,255,255,0.2); color:#fff; font-size:12px; font-weight:700; padding:5px 14px; border-radius:20px;\">📊 RAPPORT HEBDOMADAIRE</span></td>\n        </tr>\n      </table>\n      <p style=\"color:#9FE1CB; font-size:14px; margin:8px 0 8px;\">Semaine du {{ $('Code — Résumé hebdomadaire').item.json.debut_semaine }} au {{ $('Code — Résumé hebdomadaire').item.json.fin_semaine }}</p>\n      <p style=\"color:rgba(255,255,255,0.6); font-size:13px; margin:0;\">{{ new Date().toLocaleDateString('fr-FR', {weekday:'long', year:'numeric', month:'long', day:'numeric'}) }}</p>\n    </td>\n  </tr>\n\n  <tr>\n    <td style=\"padding:24px 32px 0;\">\n      <table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\">\n        <tr>\n          <td width=\"25%\" style=\"padding-right:8px;\">\n            <table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"background:#EAF3DE; border-radius:10px; border:1px solid #e8e8e8;\">\n              <tr><td style=\"padding:14px 12px; text-align:center;\">\n                <div style=\"font-size:26px; font-weight:700; color:#3B6D11;\">{{ $('Code — Résumé hebdomadaire').item.json.nb_total }}</div>\n                <div style=\"font-size:10px; color:#6b9e72; margin-top:4px; text-transform:uppercase; letter-spacing:0.05em;\">Détections</div>\n              </td></tr>\n            </table>\n          </td>\n          <td width=\"25%\" style=\"padding:0 4px;\">\n            <table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"background:{{ $('Code — Résumé hebdomadaire').item.json.nb_alertes > 0 ? '#FCEBEB' : '#EAF3DE' }}; border-radius:10px; border:1px solid #e8e8e8;\">\n              <tr><td style=\"padding:14px 12px; text-align:center;\">\n                <div style=\"font-size:26px; font-weight:700; color:{{ $('Code — Résumé hebdomadaire').item.json.nb_alertes > 0 ? '#A32D2D' : '#3B6D11' }};\">{{ $('Code — Résumé hebdomadaire').item.json.nb_alertes }}</div>\n                <div style=\"font-size:10px; color:#999; margin-top:4px; text-transform:uppercase; letter-spacing:0.05em;\">Alertes</div>\n              </td></tr>\n            </table>\n          </td>\n          <td width=\"25%\" style=\"padding:0 4px;\">\n            <table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"background:#f6f6f6; border-radius:10px; border:1px solid #e8e8e8;\">\n              <tr><td style=\"padding:14px 12px; text-align:center;\">\n                <div style=\"font-size:20px; font-weight:700; color:#444; padding-top:3px;\">{{ $('Code — Résumé hebdomadaire').item.json.nb_jours }}</div>\n                <div style=\"font-size:10px; color:#999; margin-top:4px; text-transform:uppercase; letter-spacing:0.05em;\">Jours actifs</div>\n              </td></tr>\n            </table>\n          </td>\n          <td width=\"25%\" style=\"padding-left:8px;\">\n            <table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"background:#f6f6f6; border-radius:10px; border:1px solid #e8e8e8;\">\n              <tr><td style=\"padding:14px 12px; text-align:center;\">\n                <div style=\"font-size:20px; font-weight:700; color:#444; padding-top:3px;\">{{ $('Code — Résumé hebdomadaire').item.json.score_moyen }}</div>\n                <div style=\"font-size:10px; color:#999; margin-top:4px; text-transform:uppercase; letter-spacing:0.05em;\">Score moy.</div>\n              </td></tr>\n            </table>\n          </td>\n        </tr>\n      </table>\n    </td>\n  </tr>\n\n  <tr><td style=\"padding:24px 32px 0;\">\n    <table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"margin-bottom:12px; border-radius:10px; overflow:hidden; border:1px solid #e8e8e8;\">\n      <tr><td style=\"background:#EAF3DE; padding:10px 16px; font-size:11px; font-weight:700; letter-spacing:0.08em; text-transform:uppercase; color:#3B6D11;\">Bilan semaine</td></tr>\n      <tr><td style=\"padding:12px 16px; font-size:14px; line-height:1.7; color:#2C2C2A;\">{{ $json.bilan }}</td></tr>\n    </table>\n\n    <table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"margin-bottom:12px; border-radius:10px; overflow:hidden; border:1px solid #e8e8e8;\">\n      <tr><td style=\"background:#FAEEDA; padding:10px 16px; font-size:11px; font-weight:700; letter-spacing:0.08em; text-transform:uppercase; color:#854F0B;\">Jours notables</td></tr>\n      <tr><td style=\"padding:12px 16px; font-size:14px; line-height:1.7; color:#2C2C2A;\">{{ $json.jours_notables }}</td></tr>\n    </table>\n\n    <table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"margin-bottom:12px; border-radius:10px; overflow:hidden; border:1px solid #e8e8e8;\">\n      <tr><td style=\"background:#E6F1FB; padding:10px 16px; font-size:11px; font-weight:700; letter-spacing:0.08em; text-transform:uppercase; color:#0C447C;\">Tendances</td></tr>\n      <tr><td style=\"padding:12px 16px; font-size:14px; line-height:1.7; color:#2C2C2A;\">{{ $json.tendances }}</td></tr>\n    </table>\n\n    <table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"margin-bottom:20px; border-radius:10px; overflow:hidden; border:1px solid #e8e8e8;\">\n      <tr><td style=\"background:#EAF3DE; padding:10px 16px; font-size:11px; font-weight:700; letter-spacing:0.08em; text-transform:uppercase; color:#3B6D11;\">Recommandations</td></tr>\n      <tr><td style=\"padding:12px 16px; font-size:14px; line-height:1.7; color:#2C2C2A;\">{{ $json.recommandations }}</td></tr>\n    </table>\n\n    <hr style=\"border:none; border-top:1px solid #f0f0f0; margin:20px 0;\">\n    <p style=\"font-size:12px; color:#aaa; margin:0; line-height:1.6;\">Rapport généré automatiquement chaque lundi à 08h00 par SeniorAssist.<br>En cas d'urgence, contactez immédiatement l'équipe soignante.</p>\n  </td></tr>\n\n  <tr>\n    <td style=\"padding:16px 32px 20px; background:#fafafa; border-top:1px solid #f0f0f0; border-radius:0 0 16px 16px;\">\n      <p style=\"font-size:12px; color:#aaa; margin:0;\">SeniorAssist surveille en continu et génère un rapport chaque semaine.</p>\n      <p style=\"font-size:12px; color:#ccc; margin:6px 0 0;\">Propulsé par <span style=\"color:#1D9E75;\">WEB-CREAT</span> · Automatisation IA pour les professionnels</p>\n    </td>\n  </tr>\n\n</table>\n</td></tr>\n</table>\n</body>\n</html>",
+        "options": {
+          "appendAttribution": false,
+          "attachmentsUi": {
+            "attachmentsBinary": [
+              {
+                "property": "photo_salon"
+              },
+              {
+                "property": "photo_entree"
+              }
+            ]
+          }
+        }
+      },
+      "id": "538b509f-75af-4a46-b33e-b688d4fea812",
+      "name": "Gmail — Rapport hebdomadaire",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        1920,
+        -80
+      ],
+      "webhookId": "f73f5c88-9005-40be-bad9-9c8fe4ca58e2",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "oWi8NIF0PA1jNesS",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "http://localhost:5000/api/salon/latest.jpg",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file",
+              "outputPropertyName": "photo_salon"
+            }
+          },
+          "timeout": 8000
+        }
+      },
+      "id": "a7b8c9d0-0001-0000-0000-hebdo0000001",
+      "name": "HTTP — Photo Salon Hebdo",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1200,
+        -128
+      ],
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "url": "http://localhost:5000/api/entree/latest.jpg",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file",
+              "outputPropertyName": "photo_entree"
+            }
+          },
+          "timeout": 8000
+        }
+      },
+      "id": "a7b8c9d0-0002-0000-0000-hebdo0000002",
+      "name": "HTTP — Photo Entrée Hebdo",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1440,
+        -128
+      ],
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "jsCode": "const rapport = $('Code — Extrait rapport').first().json;\nconst salonBin  = $('HTTP — Photo Salon Hebdo').first().binary?.photo_salon  ?? null;\nconst entreeBin = $('HTTP — Photo Entrée Hebdo').first().binary?.photo_entree ?? null;\nreturn [{\n  json: { ...rapport, nb_photos: (salonBin ? 1 : 0) + (entreeBin ? 1 : 0) },\n  binary: {\n    ...(salonBin  ? { photo_salon:  salonBin  } : {}),\n    ...(entreeBin ? { photo_entree: entreeBin } : {})\n  }\n}];"
+      },
+      "id": "a7b8c9d0-0003-0000-0000-hebdo0000003",
+      "name": "Code — Prépare Gmail Hebdo",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1680,
+        -128
+      ]
+    }
+  ],
+  "connections": {
+    "CRON — Lundi 8h00": {
+      "main": [
+        [
+          {
+            "node": "HTTP — Événements 7 jours",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP — Événements 7 jours": {
+      "main": [
+        [
+          {
+            "node": "Code — Résumé hebdomadaire",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code — Résumé hebdomadaire": {
+      "main": [
+        [
+          {
+            "node": "HTTP — Ollama Analyse Semaine",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP — Ollama Analyse Semaine": {
+      "main": [
+        [
+          {
+            "node": "Code — Extrait rapport",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code — Extrait rapport": {
+      "main": [
+        [
+          {
+            "node": "HTTP — Photo Salon Hebdo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP — Photo Salon Hebdo": {
+      "main": [
+        [
+          {
+            "node": "HTTP — Photo Entrée Hebdo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP — Photo Entrée Hebdo": {
+      "main": [
+        [
+          {
+            "node": "Code — Prépare Gmail Hebdo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code — Prépare Gmail Hebdo": {
+      "main": [
+        [
+          {
+            "node": "Gmail — Rapport hebdomadaire",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false,
+    "timeSavedMode": "fixed",
+    "timezone": "Europe/Paris",
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "meta": {},
+  "createdAt": "2026-03-22 10:11:00.194",
+  "updatedAt": "2026-03-23 16:47:18.461",
+  "description": ""
+}
